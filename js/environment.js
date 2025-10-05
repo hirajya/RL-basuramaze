@@ -46,6 +46,10 @@ class Environment {
         );
         this.minStateValue = -20;  // Initialize with reasonable defaults
         this.maxStateValue = 50;   // Based on reward structure
+
+        // Add evil robot movement delay
+        this.evilRobotMoveCounter = 0;
+        this.evilRobotMoveDelay = 3;  // Move every 3 steps
     }
 
     checkInitialization() {
@@ -149,6 +153,7 @@ class Environment {
         }
         
         this.evilRobotDirection = 0; // 0: up, 1: right, 2: down, 3: left
+        this.evilRobotMoveCounter = 0;  // Reset movement counter
         this.currentSteps = 0;
         return this.getState();
     }
@@ -194,9 +199,13 @@ class Environment {
             const reward = this.calculateReward(prevPos);
             const done = this.isTerminal();
 
-            // Move evil robot if game not done
+            // Move evil robot if game not done and it's time to move
             if (!done) {
-                this.moveEvilRobot();
+                this.evilRobotMoveCounter++;
+                if (this.evilRobotMoveCounter >= this.evilRobotMoveDelay) {
+                    this.moveEvilRobot();
+                    this.evilRobotMoveCounter = 0;
+                }
             }
 
             // Check collision with evil robot after its move
