@@ -3,9 +3,9 @@ class Environment {
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext('2d');
         
-        // Grid configuration
+        // Grid configuration - increased cell size from 80 to 100
         this.gridSize = 6;
-        this.cellSize = 80;
+        this.cellSize = 100;
         this.canvas.width = this.gridSize * this.cellSize;
         this.canvas.height = this.gridSize * this.cellSize;
 
@@ -40,9 +40,12 @@ class Environment {
         // Add click handling for grid editing
         this.setupGridEditor();
 
-        // Add state values tracking
+        // Add state values and visited states tracking
         this.stateValues = Array(this.gridSize).fill().map(() => 
             Array(this.gridSize).fill(0)
+        );
+        this.visitedStates = Array(this.gridSize).fill().map(() => 
+            Array(this.gridSize).fill(false)
         );
         this.minStateValue = -20;  // Initialize with reasonable defaults
         this.maxStateValue = 50;   // Based on reward structure
@@ -195,6 +198,9 @@ class Environment {
                 this.wallE.x = newX;
             }
 
+            // Mark state as visited when agent moves there
+            this.visitedStates[this.wallE.y][this.wallE.x] = true;
+
             // Calculate reward and check terminal state
             const reward = this.calculateReward(prevPos);
             const done = this.isTerminal();
@@ -260,9 +266,9 @@ class Environment {
         // Reach exit with trash multiplier
         if (currentCell === this.EXIT) {
             if (this.trashCount === 0) {
-                // All trash collected: big reward with multiplier
-                const multiplier = initialTrash;  // Multiplier based on total trash collected
-                return 50.0 * multiplier;  // Higher base reward * multiplier
+                // All trash collected: multiply reward by total collected trash
+                const multiplier = initialTrash;  // Total trash that was in the level
+                return 50.0 * multiplier;  // Base exit reward * number of trash collected
             } else {
                 return -10;  // Penalty for reaching exit without all trash
             }
@@ -289,7 +295,7 @@ class Environment {
         const currentCell = this.grid[this.wallE.y][this.wallE.x];
         return (
             currentCell === this.MINE ||
-            (currentCell === this.EXIT && this.trashCount === 0) ||
+            currentCell === this.EXIT ||  // Remove trash collection condition
             (this.wallE.x === this.evilRobot.x && this.wallE.y === this.evilRobot.y)
         );
     }
@@ -323,7 +329,7 @@ class Environment {
                 // Draw cell background with state value color
                 if (!this.isEditing && this.grid[y][x] !== this.WALL) {
                     const value = this.stateValues[y][x];
-                    this.ctx.fillStyle = this.getStateValueColor(value);
+                    this.ctx.fillStyle = this.getStateValueColor(value, x, y);
                 } else {
                     this.ctx.fillStyle = '#f0f0f0';
                 }
@@ -332,18 +338,6 @@ class Environment {
                 // Draw cell border
                 this.ctx.strokeStyle = '#ccc';
                 this.ctx.strokeRect(x * this.cellSize, y * this.cellSize, this.cellSize, this.cellSize);
-
-                // Draw value text if not in editing mode
-                if (!this.isEditing && this.grid[y][x] !== this.WALL) {
-                    const value = this.stateValues[y][x].toFixed(1);
-                    this.ctx.fillStyle = '#000';
-                    this.ctx.font = '12px Arial';
-                    this.ctx.textAlign = 'center';
-                    this.ctx.textBaseline = 'middle';
-                    this.ctx.fillText(value, 
-                        x * this.cellSize + this.cellSize/2, 
-                        y * this.cellSize + this.cellSize/2 - 25);
-                }
 
                 // Draw cell content
                 const cell = this.grid[y][x];
@@ -399,6 +393,7 @@ class Environment {
         this.stateVisits = Array(this.gridSize).fill().map(() => Array(this.gridSize).fill(0));
         this.maxVisits = 1;
         this.stateValues = Array(this.gridSize).fill().map(() => Array(this.gridSize).fill(0));
+        this.visitedStates = Array(this.gridSize).fill().map(() => Array(this.gridSize).fill(false));
         this.minStateValue = -20;
         this.maxStateValue = 50;
     }
@@ -552,23 +547,32 @@ class Environment {
         this.maxSteps = steps;
     }
 
-    getStateValueColor(value) {
+    getStateValueColor(value, x, y) {
+        // Only show colors for visited states
+        if (!this.visitedStates[y][x]) {
+            return '#ffffff'; // White for unvisited states
+        }
+
         // Normalize value between -1 and 1
         const normalizedValue = (value - this.minStateValue) / (this.maxStateValue - this.minStateValue) * 2 - 1;
         
-        // Convert to RGB
-        let r, g, b;
+        // Use HSL color space for smoother transitions
         if (normalizedValue < 0) {
-            // Negative values: red to white
-            const t = 1 + normalizedValue; // t goes from 0 to 1
-            r = 255;
-            g = b = Math.round(255 * t);
+            // Negative values: soft pink to white
+            // Hue: 350 (pink/red)
+            // Saturation: 60-100% (more saturated for more negative values)
+            // Lightness: 85-95% (keeping it light but visible)
+            const saturation = 60 + Math.abs(normalizedValue) * 40;
+            const lightness = 95 - Math.abs(normalizedValue) * 10;
+            return `hsl(350, ${saturation}%, ${lightness}%)`;
         } else {
-            // Positive values: white to blue
-            const t = normalizedValue; // t goes from 0 to 1
-            b = 255;
-            r = g = Math.round(255 * (1 - t));
+            // Positive values: white to soft blue
+            // Hue: 210 (blue)
+            // Saturation: 60-100%
+            // Lightness: 85-95%
+            const saturation = 60 + normalizedValue * 40;
+            const lightness = 95 - normalizedValue * 10;
+            return `hsl(210, ${saturation}%, ${lightness}%)`;
         }
-        return `rgb(${r}, ${g}, ${b})`;
     }
 }
