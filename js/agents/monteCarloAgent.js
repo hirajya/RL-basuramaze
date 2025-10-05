@@ -18,7 +18,6 @@ class MonteCarloAgent extends BaseAgent {
         }
         try {
             const action = this.epsilonGreedy(state, this.qTable);
-            console.log('Selected action:', action, 'for state:', this.stateToString(state));
             return action;
         } catch (error) {
             console.error('Error in selectAction:', error);
@@ -27,10 +26,14 @@ class MonteCarloAgent extends BaseAgent {
     }
 
     update(state, action, reward) {
+        if (!state || !Number.isInteger(action) || typeof reward !== 'number') {
+            console.error('Invalid input to update:', { state, action, reward });
+            return;
+        }
+        
         try {
             // Store state-action-reward for the episode
             const stateStr = this.stateToString(state);
-            console.log('Storing transition:', { stateStr, action, reward });
             this.episodeStates.push(stateStr);
             this.episodeActions.push(action);
             this.episodeRewards.push(reward);
@@ -40,6 +43,11 @@ class MonteCarloAgent extends BaseAgent {
     }
 
     episodeEnd() {
+        if (this.episodeStates.length === 0) {
+            console.warn('Episode ended with no data');
+            return;
+        }
+
         try {
             // Calculate returns for each step
             let G = 0;
@@ -61,7 +69,7 @@ class MonteCarloAgent extends BaseAgent {
                     this.qTable[stateStr] = Array(this.actionSpace).fill(0);
                 }
                 
-                // Update Q-value using incremental mean
+                // Update Q-value using incremental mean with learning rate
                 const oldQ = this.qTable[stateStr][action];
                 this.qTable[stateStr][action] = oldQ + this.learningRate * (returns[t] - oldQ);
             }
@@ -72,7 +80,6 @@ class MonteCarloAgent extends BaseAgent {
             
             // Log episode stats
             this.episodeCount++;
-            console.log('Episode', this.episodeCount, 'ended. Total reward:', totalReward);
 
             // Clear episode memory
             this.episodeStates = [];
@@ -80,6 +87,10 @@ class MonteCarloAgent extends BaseAgent {
             this.episodeRewards = [];
         } catch (error) {
             console.error('Error in episodeEnd:', error);
+            // Reset episode data on error
+            this.episodeStates = [];
+            this.episodeActions = [];
+            this.episodeRewards = [];
         }
     }
 

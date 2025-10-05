@@ -560,18 +560,18 @@ class Environment {
         if (normalizedValue < 0) {
             // Negative values: soft pink to white
             // Hue: 350 (pink/red)
-            // Saturation: 60-100% (more saturated for more negative values)
-            // Lightness: 85-95% (keeping it light but visible)
-            const saturation = 60 + Math.abs(normalizedValue) * 40;
-            const lightness = 95 - Math.abs(normalizedValue) * 10;
+            // Saturation: 30-90% (less saturated for better visibility)
+            // Lightness: 90-100% (keeping it lighter)
+            const saturation = 30 + Math.abs(normalizedValue) * 60;
+            const lightness = 100 - Math.abs(normalizedValue) * 10;
             return `hsl(350, ${saturation}%, ${lightness}%)`;
         } else {
-            // Positive values: white to soft blue
+            // Positive values: white to vibrant blue
             // Hue: 210 (blue)
-            // Saturation: 60-100%
-            // Lightness: 85-95%
-            const saturation = 60 + normalizedValue * 40;
-            const lightness = 95 - normalizedValue * 10;
+            // Saturation: 40-100% (more saturated for positive values)
+            // Lightness: 60-90% (darker blue for more prominence)
+            const saturation = 40 + normalizedValue * 60;
+            const lightness = 90 - normalizedValue * 30;
             return `hsl(210, ${saturation}%, ${lightness}%)`;
         }
     }

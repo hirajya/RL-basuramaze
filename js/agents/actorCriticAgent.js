@@ -1,37 +1,44 @@
 class ActorCriticAgent extends BaseAgent {
     constructor(params) {
         super(params);
-        console.log('Initializing Actor-Critic agent with params:', params);
         
         // Store separate learning rates for actor and critic
         this.actorLearningRate = params.actorLearningRate || 0.001;
         this.criticLearningRate = params.criticLearningRate || 0.01;
-        this.temperature = params.temperature || 1.0;  // Temperature for softmax
+        this.temperature = params.temperature || 1.0;
         
         // Initialize networks
-        this.actorNetwork = new NeuralNetwork([24, 32, 4]);
-        this.criticNetwork = new NeuralNetwork([24, 32, 1]);
+        this.actorNetwork = new NeuralNetwork([24, 64, 32, 4]);  // Deeper network
+        this.criticNetwork = new NeuralNetwork([24, 64, 32, 1]);
         this.states = [];
         this.actions = [];
         this.rewards = [];
         this.episodeCount = 0;
+
+        // Add state value tracking
+        this.minStateValue = -20;
+        this.maxStateValue = 50;
     }
 
-    // Convert state to neural network input
     stateToTensor(state) {
         try {
-            if (!state || !state.wallE || !state.evilRobot) {
+            if (!state || !state.wallE || !state.evilRobot || typeof state.trashCount !== 'number') {
                 console.error('Invalid state object:', state);
                 return new Array(24).fill(0);
             }
             
             const input = new Array(24).fill(0);
+            
             // Wall-E position (one-hot)
             const wallEIndex = state.wallE.y * 6 + state.wallE.x;
             input[wallEIndex] = 1;
+            
             // Evil robot position (one-hot)
             const robotIndex = 12 + state.evilRobot.y * 6 + state.evilRobot.x;
             input[robotIndex] = 1;
+            
+            // Add trash count information
+            input[23] = state.trashCount / 3;  // Normalize by max possible trash
             
             return input;
         } catch (error) {
@@ -45,9 +52,12 @@ class ActorCriticAgent extends BaseAgent {
             const input = this.stateToTensor(state);
             const actionProbs = this.actorNetwork.forward(input);
             
-            // Update state value in environment using critic's estimate
+            // Get and normalize state value
             const stateValue = this.criticNetwork.forward(input)[0];
-            window.env.updateStateValue(state.wallE.x, state.wallE.y, stateValue);
+            const normalizedValue = Math.max(this.minStateValue, Math.min(this.maxStateValue, stateValue));
+            
+            // Update state value in environment
+            window.env.updateStateValue(state.wallE.x, state.wallE.y, normalizedValue);
             
             // Apply softmax with temperature
             const expProbs = actionProbs.map(x => Math.exp(x / this.temperature));
@@ -56,23 +66,19 @@ class ActorCriticAgent extends BaseAgent {
 
             // Epsilon-greedy exploration
             if (Math.random() < this.epsilon) {
-                const action = Math.floor(Math.random() * this.actionSpace);
-                console.log('Random action (epsilon-greedy):', action);
-                return action;
+                return Math.floor(Math.random() * this.actionSpace);
             }
 
-            // Sample from policy
+            // Sample from policy using roulette wheel selection
             const rand = Math.random();
             let cumSum = 0;
             for (let i = 0; i < probabilities.length; i++) {
                 cumSum += probabilities[i];
                 if (rand < cumSum) {
-                    console.log('Policy action:', i, 'probabilities:', probabilities);
                     return i;
                 }
             }
-            console.log('Defaulting to last action');
-            return probabilities.length - 1;
+            return probabilities.length - 1;  // Fallback to last action
         } catch (error) {
             console.error('Error in selectAction:', error);
             return Math.floor(Math.random() * this.actionSpace);
@@ -80,6 +86,11 @@ class ActorCriticAgent extends BaseAgent {
     }
 
     update(state, action, reward, nextState, done) {
+        if (!state || !nextState || !Number.isInteger(action) || typeof reward !== 'number') {
+            console.error('Invalid input to update:', { state, action, reward, nextState });
+            return;
+        }
+
         try {
             // Store transition
             this.states.push(this.stateToTensor(state));
@@ -105,36 +116,42 @@ class ActorCriticAgent extends BaseAgent {
             for (let t = this.rewards.length - 1; t >= 0; t--) {
                 G = this.rewards[t] + this.gamma * G;
                 returns.unshift(G);
+                
+                // Track min/max state values
+                this.minStateValue = Math.min(this.minStateValue, G);
+                this.maxStateValue = Math.max(this.maxStateValue, G);
             }
 
+            // Normalize returns for stable training
+            const minReturn = Math.min(...returns);
+            const maxReturn = Math.max(...returns);
+            const normalizedReturns = returns.map(G => 
+                (G - minReturn) / (maxReturn - minReturn + 1e-8) * 70 - 20
+            );
+
             // Calculate advantages
-            const advantages = returns.map((G, i) => G - values[i]);
+            const advantages = normalizedReturns.map((G, i) => G - values[i]);
 
-            // Update networks
-            for (let t = 0; t < this.states.length; t++) {
-                // Update critic using critic learning rate
-                this.criticNetwork.backward(
-                    this.states[t], 
-                    [returns[t]], 
-                    this.criticLearningRate
-                );
+            // Clip advantages for stability
+            const clippedAdvantages = advantages.map(a => 
+                Math.max(Math.min(a, 10), -10)
+            );
 
-                // Update actor using actor learning rate and temperature-scaled advantages
-                const actionProbs = this.actorNetwork.forward(this.states[t]);
-                const actionGradients = actionProbs.map((_, i) => 
-                    i === this.actions[t] ? advantages[t] / this.temperature : 0
-                );
-                this.actorNetwork.backward(
-                    this.states[t],
-                    actionGradients,
-                    this.actorLearningRate
+            // Update networks with mini-batch
+            const batchSize = Math.min(32, this.states.length);
+            for (let i = 0; i < this.states.length; i += batchSize) {
+                const batchEnd = Math.min(i + batchSize, this.states.length);
+                this.updateNetworks(
+                    this.states.slice(i, batchEnd),
+                    this.actions.slice(i, batchEnd),
+                    normalizedReturns.slice(i, batchEnd),
+                    clippedAdvantages.slice(i, batchEnd)
                 );
             }
 
             // Log episode statistics
             this.episodeCount++;
             const totalReward = this.rewards.reduce((a, b) => a + b, 0);
-            console.log('Episode', this.episodeCount, 'ended. Total reward:', totalReward);
             this.addReward(totalReward);
 
             // Clear episode data
@@ -150,16 +167,37 @@ class ActorCriticAgent extends BaseAgent {
         }
     }
 
+    updateNetworks(states, actions, returns, advantages) {
+        // Update critic
+        for (let i = 0; i < states.length; i++) {
+            this.criticNetwork.backward(
+                states[i],
+                [returns[i]],
+                this.criticLearningRate
+            );
+        }
+
+        // Update actor
+        for (let i = 0; i < states.length; i++) {
+            const actionProbs = this.actorNetwork.forward(states[i]);
+            const actionGradients = actionProbs.map((_, j) => 
+                j === actions[i] ? advantages[i] / this.temperature : 0
+            );
+            this.actorNetwork.backward(
+                states[i],
+                actionGradients,
+                this.actorLearningRate
+            );
+        }
+    }
+
     updateParams(params) {
-        // Update actor-critic specific parameters
+        super.updateParams(params);
         if (params.actorLearningRate !== undefined) {
             this.actorLearningRate = params.actorLearningRate;
         }
         if (params.criticLearningRate !== undefined) {
             this.criticLearningRate = params.criticLearningRate;
-        }
-        if (params.gamma !== undefined) {
-            this.gamma = params.gamma;
         }
         if (params.temperature !== undefined) {
             this.temperature = params.temperature;
@@ -167,18 +205,15 @@ class ActorCriticAgent extends BaseAgent {
     }
 
     reset() {
-        try {
-            super.reset();
-            console.log('Resetting Actor-Critic agent');
-            this.actorNetwork = new NeuralNetwork([24, 32, 4]);
-            this.criticNetwork = new NeuralNetwork([24, 32, 1]);
-            this.states = [];
-            this.actions = [];
-            this.rewards = [];
-            this.episodeCount = 0;
-        } catch (error) {
-            console.error('Error in reset:', error);
-        }
+        super.reset();
+        this.actorNetwork = new NeuralNetwork([24, 64, 32, 4]);
+        this.criticNetwork = new NeuralNetwork([24, 64, 32, 1]);
+        this.states = [];
+        this.actions = [];
+        this.rewards = [];
+        this.episodeCount = 0;
+        this.minStateValue = -20;
+        this.maxStateValue = 50;
     }
 }
 
