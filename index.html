@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wall-E RL Environment</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .canvas-container {
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+        .controls {
+            width: 300px;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 5px;
+        }
+        .controls label {
+            display: block;
+            margin: 10px 0 5px;
+        }
+        .chart-container {
+            margin-top: 20px;
+            width: 100%;
+            max-width: 800px;
+        }
+        .grid-controls {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 5px;
+        }
+        .editor-tools {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .editor-tools label {
+            display: inline-flex;
+            align-items: center;
+            padding: 5px 10px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .editor-tools label:hover {
+            background: #e9e9e9;
+        }
+        .editor-tools input[type="radio"] {
+            margin-right: 5px;
+        }
+        #saveGridButton, #resetGridButton {
+            width: 100%;
+            padding: 8px;
+            margin-top: 10px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #resetGridButton {
+            background: #f44336;
+        }
+        #saveGridButton:hover {
+            background: #45a049;
+        }
+        #resetGridButton:hover {
+            background: #da190b;
+        }
+        .status-panel {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 5px;
+        }
+        .status-panel div {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Wall-E Reinforcement Learning Environment</h1>
+    <div class="container">
+        <div class="canvas-container">
+            <canvas id="gameCanvas"></canvas>
+            <div class="grid-controls">
+                <h3>Grid Editor</h3>
+                <div class="editor-tools">
+                    <label>
+                        <input type="radio" name="gridTool" value="wall-e" checked> Wall-E
+                    </label>
+                    <label>
+                        <input type="radio" name="gridTool" value="evil-robot"> Evil Robot
+                    </label>
+                    <label>
+                        <input type="radio" name="gridTool" value="wall"> Wall
+                    </label>
+                    <label>
+                        <input type="radio" name="gridTool" value="trash"> Trash
+                    </label>
+                    <label>
+                        <input type="radio" name="gridTool" value="mine"> Mine
+                    </label>
+                    <label>
+                        <input type="radio" name="gridTool" value="exit"> Exit
+                    </label>
+                    <label>
+                        <input type="radio" name="gridTool" value="empty"> Empty
+                    </label>
+                </div>
+                <button id="saveGridButton">Save Grid</button>
+                <button id="resetGridButton">Reset Grid</button>
+            </div>
+            <div class="status-panel">
+                <div>Current Episode: <span id="episodeCounter">0</span> / <span id="totalEpisodes">0</span></div>
+                <div>Current Reward: <span id="currentReward">0</span></div>
+                <div>Best Reward: <span id="bestReward">0</span></div>
+                <div>Average Reward: <span id="averageReward">0</span></div>
+                <div>Trash Remaining: <span id="trashCount">0</span></div>
+            </div>
+        </div>
+        <div class="controls">
+            <h3>Algorithm Settings</h3>
+            <label>Algorithm:</label>
+            <select id="algorithm">
+                <option value="monte_carlo">Monte Carlo</option>
+                <option value="q_learning">Q-Learning</option>
+                <option value="actor_critic">Actor-Critic</option>
+            </select>
+
+            <label>Episodes:</label>
+            <input type="number" id="episodes" value="200" min="1">
+
+            <label>Max Steps per Episode:</label>
+            <input type="number" id="max_steps" value="200" min="1">
+
+            <div id="default_params">
+                <label>Learning Rate:</label>
+                <input type="range" id="learning_rate" min="0.01" max="1" step="0.01" value="0.1">
+                <span id="learning_rate_value">0.1</span>
+
+                <label>Discount Factor (γ):</label>
+                <input type="range" id="gamma" min="0.1" max="0.99" step="0.01" value="0.99">
+                <span id="gamma_value">0.99</span>
+
+                <label>Exploration Rate (ε):</label>
+                <input type="range" id="epsilon" min="0" max="1" step="0.01" value="0.1">
+                <span id="epsilon_value">0.1</span>
+            </div>
+
+            <div id="actor_critic_params" style="display: none;">
+                <label>Actor Learning Rate:</label>
+                <input type="range" id="actor_learning_rate" min="0.01" max="1" step="0.01" value="0.001">
+                <span id="actor_learning_rate_value">0.001</span>
+
+                <label>Critic Learning Rate:</label>
+                <input type="range" id="critic_learning_rate" min="0.01" max="1" step="0.01" value="0.01">
+                <span id="critic_learning_rate_value">0.01</span>
+
+                <label>Discount Factor (γ):</label>
+                <input type="range" id="ac_gamma" min="0.1" max="0.99" step="0.01" value="0.99">
+                <span id="ac_gamma_value">0.99</span>
+
+                <label>Temperature (τ):</label>
+                <input type="range" id="temperature" min="0.01" max="2" step="0.01" value="1.0">
+                <span id="temperature_value">1.0</span>
+            </div>
+
+            <label>Training Speed:</label>
+            <input type="range" id="speed" min="1" max="100" value="50">
+            <span id="speed_value">50</span>
+
+            <button id="startButton" style="margin-top: 20px; width: 100%;">Start Training</button>
+            <button id="resetButton" style="margin-top: 10px; width: 100%;">Reset</button>
+        </div>
+    </div>
+    <div class="chart-container">
+        <canvas id="rewardChart"></canvas>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/environment.js"></script>
+    <script src="js/agents/baseAgent.js"></script>
+    <script src="js/agents/monteCarloAgent.js"></script>
+    <script src="js/agents/qLearningAgent.js"></script>
+    <script src="js/agents/actorCriticAgent.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

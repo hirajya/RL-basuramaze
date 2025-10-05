@@ -1,20 +1,25 @@
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
 import numpy as np
 import time
 import pygame
 import random
-from collections import defaultdict
+from monte_carlo_agent import MonteCarloAgent
+from q_learning_agent import QLearningAgent
+from actor_critic_agent import ActorCriticAgent
+from settings import AlgorithmSettings, SettingsUI
+from visualization import MetricsVisualizer
 
 
 class BasurahanMazeEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
 
-    def __init__(self, grid_size=(6, 6), cell_size=80):
+    def __init__(self, grid_size=(6, 6), cell_size=80, settings=None):
         super(BasurahanMazeEnv, self).__init__()
 
         self.grid_size = grid_size
         self.cell_size = cell_size
+        self.settings = settings
 
         self.action_space = spaces.Discrete(4)  # 0=Up, 1=Right, 2=Down, 3=Left
         self.observation_space = spaces.Box(low=0, high=1,
@@ -36,9 +41,10 @@ class BasurahanMazeEnv(gym.Env):
 
         # Pygame setup
         pygame.init()
-        self.screen = pygame.display.set_mode((grid_size[1]*cell_size, grid_size[0]*cell_size))
-        pygame.display.set_caption("Basurahan Maze Simulation with Monte Carlo")
-        self.clock = pygame.time.Clock()
+        metrics_width = 200  # Width for metrics display
+        self.screen = pygame.display.set_mode((grid_size[1]*cell_size + metrics_width, grid_size[0]*cell_size))
+        pygame.display.set_caption("Basurahan Maze Simulation")
+        self.clock = pygame.time.Clock()  # Add clock initialization
 
         # Load images (place these in same folder)
         self.wall_e_img = pygame.image.load("wall e.jfif")
@@ -206,53 +212,78 @@ class BasurahanMazeEnv(gym.Env):
         self.screen.blit(self.evil_img, (ec*self.cell_size+5, er*self.cell_size+5))
 
         pygame.display.flip()
-        self.clock.tick(10)
+        if self.settings:
+            self.clock.tick(self.settings.simulation_speed)
+        else:
+            self.clock.tick(10)
 
 
-# === Monte Carlo Agent ===
-def mc_policy(Q, state, epsilon=0.1):
-    if random.random() < epsilon:
-        return random.choice(range(4))
-    qs = [Q[(state, a)] for a in range(4)]
-    return int(np.argmax(qs))
-
-
+# Main simulation code
 if __name__ == "__main__":
-    env = BasurahanMazeEnv()
-    Q = defaultdict(float)
-    Returns = defaultdict(list)
-
-    episodes = 200
-    for ep in range(episodes):
+    # Initialize settings and show UI
+    settings = AlgorithmSettings()
+    settings_ui = SettingsUI(settings)
+    settings = settings_ui.run()
+    
+    # Initialize environment with settings
+    env = BasurahanMazeEnv(settings=settings)
+    visualizer = MetricsVisualizer(env.grid_size, env.cell_size)
+    
+    # Initialize agent based on selected algorithm
+    if settings.algorithm == "monte_carlo":
+        agent = MonteCarloAgent(settings)
+    elif settings.algorithm == "q_learning":
+        agent = QLearningAgent(settings)
+    else:  # actor_critic
+        state_size = env.observation_space.shape[0] * env.observation_space.shape[1] * 3
+        agent = ActorCriticAgent(settings, state_size)
+    
+    # Main training loop
+    for ep in range(settings.episodes):
+        visualizer.start_episode()
         obs = env.reset()
-        state = (env.agent_pos, env.evil_pos)
+        state = (env.agent_pos, env.evil_pos) if settings.algorithm != "actor_critic" else obs.flatten()
         done = False
         episode_data = []
-
+        
         while not done:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     quit()
-
-            action = mc_policy(Q, state)
+            
+            # Get action from agent
+            action = agent.get_action(state)
+            
+            # Take step in environment
             obs, reward, done, info = env.step(action)
-            next_state = (env.agent_pos, env.evil_pos)
-
-            episode_data.append((state, action, reward))
+            next_state = (env.agent_pos, env.evil_pos) if settings.algorithm != "actor_critic" else obs.flatten()
+            
+            # Update visualization
+            visualizer.update_heatmap(env.agent_pos)
+            
+            # Update agent
+            if settings.algorithm == "monte_carlo":
+                episode_data.append((state, action, reward))
+            elif settings.algorithm == "q_learning":
+                agent.update(state, action, reward, next_state)
+            else:  # actor_critic
+                agent.update(state, action, reward, next_state, done)
+            
             state = next_state
-
+            
+            # Render environment and metrics
             env.render()
-
-        # Monte Carlo update
-        G = 0
-        for (s, a, r) in reversed(episode_data):
-            G += r
-            if not any((x[0] == s and x[1] == a) for x in episode_data[:-1]):
-                Returns[(s, a)].append(G)
-                Q[(s, a)] = np.mean(Returns[(s, a)])
-
+            if settings.show_reward_graph or settings.show_heatmap:
+                visualizer.render_metrics(env.screen, agent if settings.algorithm == "actor_critic" else None)
+            pygame.display.flip()
+        
+        # Episode cleanup
+        if settings.algorithm == "monte_carlo":
+            agent.update(episode_data)
+        
+        visualizer.end_episode(env.total_reward)
         print(f"Episode {ep+1} finished with total reward {env.total_reward}")
-
+    
     time.sleep(2)
     pygame.quit()
