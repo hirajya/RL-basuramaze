@@ -122,6 +122,18 @@
                         <input type="radio" name="gridTool" value="empty"> Empty
                     </label>
                 </div>
+                
+                <!-- Evil Robot Control -->
+                <div style="margin: 15px 0; padding: 10px; background: #fff; border-radius: 4px; border: 1px solid #ddd;">
+                    <label style="display: flex; align-items: center; margin: 0;">
+                        <input type="checkbox" id="evilRobotEnabled" checked style="margin-right: 8px;">
+                        <strong>Enable Evil Robot</strong>
+                    </label>
+                    <small style="color: #666; margin-top: 5px; display: block;">
+                        Uncheck to disable evil robot movement and collision
+                    </small>
+                </div>
+                
                 <button id="saveGridButton">Save Grid</button>
                 <button id="resetGridButton">Reset Grid</button>
             </div>
@@ -131,6 +143,7 @@
                 <div>Best Reward: <span id="bestReward">0</span></div>
                 <div>Average Reward: <span id="averageReward">0</span></div>
                 <div>Trash Remaining: <span id="trashCount">0</span></div>
+                <div style="color: #4CAF50; font-weight: bold;">🎉 Successful Completions: <span id="successfulCompletions">0</span></div>
             </div>
         </div>
         <div class="controls">

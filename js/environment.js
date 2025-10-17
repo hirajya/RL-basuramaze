@@ -53,6 +53,13 @@ class Environment {
         // Add evil robot movement delay
         this.evilRobotMoveCounter = 0;
         this.evilRobotMoveDelay = 3;  // Move every 3 steps
+        
+        // Evil robot control
+        this.evilRobotEnabled = true;  // Default enabled
+        
+        // Success tracking
+        this.successfulCompletions = 0;  // Track successful completions
+        this.totalInitialTrash = 0;      // Remember initial trash count
     }
 
     checkInitialization() {
@@ -155,6 +162,9 @@ class Environment {
             this.evilRobot = { x: Math.floor(this.gridSize/2), y: Math.floor(this.gridSize/2) };
         }
         
+        // Store initial trash count for success tracking
+        this.totalInitialTrash = this.trashCount;
+        
         this.evilRobotDirection = 0; // 0: up, 1: right, 2: down, 3: left
         this.evilRobotMoveCounter = 0;  // Reset movement counter
         this.currentSteps = 0;
@@ -176,6 +186,9 @@ class Environment {
             if (this.currentSteps >= this.maxSteps) {
                 return [this.getState(), -1, true];  // End episode if max steps reached
             }
+
+            // Update evil robot enabled state from checkbox
+            this.evilRobotEnabled = document.getElementById('evilRobotEnabled').checked;
 
             // Validate action
             if (typeof action !== 'number' || action < 0 || action > 3) {
@@ -201,12 +214,20 @@ class Environment {
             // Mark state as visited when agent moves there
             this.visitedStates[this.wallE.y][this.wallE.x] = true;
 
-            // Calculate reward and check terminal state
+            // Check for mine hit BEFORE calculating rewards
+            const currentCell = this.grid[this.wallE.y][this.wallE.x];
+            if (currentCell === this.MINE) {
+                // Mine hit - immediately end episode
+                this.grid[this.wallE.y][this.wallE.x] = this.EMPTY; // Remove mine
+                return [this.getState(), -20, true]; // Heavy penalty and episode ends
+            }
+
+            // Calculate reward and check other terminal states
             const reward = this.calculateReward(prevPos);
             const done = this.isTerminal();
 
-            // Move evil robot if game not done and it's time to move
-            if (!done) {
+            // Move evil robot only if enabled, game not done, and it's time to move
+            if (!done && this.evilRobotEnabled) {
                 this.evilRobotMoveCounter++;
                 if (this.evilRobotMoveCounter >= this.evilRobotMoveDelay) {
                     this.moveEvilRobot();
@@ -214,8 +235,8 @@ class Environment {
                 }
             }
 
-            // Check collision with evil robot after its move
-            if (this.wallE.x === this.evilRobot.x && this.wallE.y === this.evilRobot.y) {
+            // Check collision with evil robot only if enabled
+            if (this.evilRobotEnabled && this.wallE.x === this.evilRobot.x && this.wallE.y === this.evilRobot.y) {
                 return [this.getState(), -50, true];
             }
 
@@ -258,16 +279,22 @@ class Environment {
             return 10.0;  // Base reward for collecting trash
         }
 
-        // Hit mine
+        // Hit mine - TERMINAL STATE
         if (currentCell === this.MINE) {
-            return -20;
+            // Remove the mine from the grid to prevent double interaction
+            this.grid[this.wallE.y][this.wallE.x] = this.EMPTY;
+            return -20;  // Heavy penalty for hitting mine
         }
 
         // Reach exit with trash multiplier
         if (currentCell === this.EXIT) {
             if (this.trashCount === 0) {
+                // SUCCESS! All trash collected before reaching exit
+                this.successfulCompletions++;
+                console.log(`🎉 Successful completion #${this.successfulCompletions}! All trash collected!`);
+                
                 // All trash collected: multiply reward by total collected trash
-                const multiplier = initialTrash;  // Total trash that was in the level
+                const multiplier = this.totalInitialTrash;  // Total trash that was in the level
                 return 50.0 * multiplier;  // Base exit reward * number of trash collected
             } else {
                 return -10;  // Penalty for reaching exit without all trash
@@ -293,10 +320,12 @@ class Environment {
 
     isTerminal() {
         const currentCell = this.grid[this.wallE.y][this.wallE.x];
+        const evilRobotEnabled = document.getElementById('evilRobotEnabled')?.checked ?? true;
+        
         return (
             currentCell === this.MINE ||
-            currentCell === this.EXIT ||  // Remove trash collection condition
-            (this.wallE.x === this.evilRobot.x && this.wallE.y === this.evilRobot.y)
+            currentCell === this.EXIT ||
+            (evilRobotEnabled && this.wallE.x === this.evilRobot.x && this.wallE.y === this.evilRobot.y)
         );
     }
 
@@ -379,13 +408,25 @@ class Environment {
                 this.cellSize - 10);
         }
 
-        // Draw Evil Robot
+        // Draw Evil Robot (with visual indication if disabled)
         if (this.assets['evil-robot']) {
+            this.ctx.save();
+            
+            // Check if evil robot is disabled
+            const evilRobotEnabled = document.getElementById('evilRobotEnabled')?.checked ?? true;
+            
+            if (!evilRobotEnabled) {
+                // Apply grayscale and opacity to show it's disabled
+                this.ctx.filter = 'grayscale(100%) opacity(0.5)';
+            }
+            
             this.ctx.drawImage(this.assets['evil-robot'],
                 this.evilRobot.x * this.cellSize + 5,
                 this.evilRobot.y * this.cellSize + 5,
                 this.cellSize - 10,
                 this.cellSize - 10);
+                
+            this.ctx.restore();
         }
     }
 
@@ -554,25 +595,26 @@ class Environment {
         }
 
         // Normalize value between -1 and 1
-        const normalizedValue = (value - this.minStateValue) / (this.maxStateValue - this.minStateValue) * 2 - 1;
+        const range = this.maxStateValue - this.minStateValue;
+        if (range === 0) return '#ffffff';
         
-        // Use HSL color space for smoother transitions
-        if (normalizedValue < 0) {
-            // Negative values: soft pink to white
-            // Hue: 350 (pink/red)
-            // Saturation: 30-90% (less saturated for better visibility)
-            // Lightness: 90-100% (keeping it lighter)
-            const saturation = 30 + Math.abs(normalizedValue) * 60;
-            const lightness = 100 - Math.abs(normalizedValue) * 10;
-            return `hsl(350, ${saturation}%, ${lightness}%)`;
+        const normalizedValue = (value - this.minStateValue) / range;
+        
+        // Make colors much more dramatic and visible
+        if (normalizedValue < 0.5) {
+            // Negative/low values: bright red to yellow
+            const intensity = (0.5 - normalizedValue) * 2; // 0 to 1
+            const red = 255;
+            const green = Math.floor(255 * (1 - intensity * 0.7)); // More dramatic
+            const blue = Math.floor(255 * (1 - intensity)); // Make it more red
+            return `rgb(${red}, ${green}, ${blue})`;
         } else {
-            // Positive values: white to vibrant blue
-            // Hue: 210 (blue)
-            // Saturation: 40-100% (more saturated for positive values)
-            // Lightness: 60-90% (darker blue for more prominence)
-            const saturation = 40 + normalizedValue * 60;
-            const lightness = 90 - normalizedValue * 30;
-            return `hsl(210, ${saturation}%, ${lightness}%)`;
+            // Positive/high values: cyan to bright blue
+            const intensity = (normalizedValue - 0.5) * 2; // 0 to 1
+            const red = Math.floor(255 * (1 - intensity));
+            const green = Math.floor(255 * (1 - intensity * 0.5)); // Keep some green for cyan effect
+            const blue = 255; // Always full blue
+            return `rgb(${red}, ${green}, ${blue})`;
         }
     }
 }

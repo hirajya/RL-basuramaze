@@ -229,6 +229,7 @@ class Simulation {
                 document.getElementById('bestReward').textContent = '0';
                 document.getElementById('averageReward').textContent = '0';
                 document.getElementById('trashCount').textContent = this.env.trashCount;
+                document.getElementById('successfulCompletions').textContent = this.env.successfulCompletions;
 
                 this.running = true;
                 document.getElementById('startButton').textContent = 'Pause Training';
@@ -250,6 +251,10 @@ class Simulation {
         this.agent = this.createAgent();
         this.episodeCount = 0;
         this.totalReward = 0;
+        
+        // Reset successful completions counter
+        this.env.successfulCompletions = 0;
+        
         this.env.resetHeatmap();
         this.env.reset();
         this.env.enableEditing(); // Enable editing after reset
@@ -257,6 +262,9 @@ class Simulation {
         this.chart.data.datasets[0].data = [];
         this.chart.data.datasets[1].data = [];
         this.chart.update();
+        
+        // Update status panel to reflect reset
+        this.updateStatusPanel();
     }
 
     updateStatusPanel() {
@@ -265,6 +273,9 @@ class Simulation {
             document.getElementById('totalEpisodes').textContent = document.getElementById('episodes').value;
             document.getElementById('currentReward').textContent = this.totalReward.toFixed(1);
             document.getElementById('trashCount').textContent = this.env.trashCount;
+            
+            // Update successful completions counter
+            document.getElementById('successfulCompletions').textContent = this.env.successfulCompletions;
 
             // Update best and average rewards
             const allRewards = this.chart.data.datasets[0].data;
