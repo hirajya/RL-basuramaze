@@ -425,8 +425,18 @@ class Simulation {
             return;
         }
 
+        // DEBUG: Log the first few metrics to see what's being stored
+        console.log('🔍 DEBUG: First 3 episode metrics:', this.episodeMetrics.slice(0, 3));
+        console.log('🔍 DEBUG: Episode markers check:', {
+            episode1Start: this.episodeMetrics[0]?.episodeStartMarker,
+            episode1End: this.episodeMetrics[0]?.episodeEndMarker,
+            totalMetrics: this.episodeMetrics.length
+        });
+
         const headers = [
             'Episode',
+            'Episode Start Marker',
+            'Episode End Marker',
             'Algorithm',
             'Current Reward',
             'Average Reward (Last 10)',
@@ -445,10 +455,12 @@ class Simulation {
             'Timestamp'
         ];
 
-        const csvContent = [
-            headers.join(','),
-            ...this.episodeMetrics.map(metric => [
+        // Create rows with explicit debugging
+        const dataRows = this.episodeMetrics.map((metric, index) => {
+            const row = [
                 metric.episode,
+                `"${metric.episodeStartMarker || 'MISSING_START'}"`,
+                `"${metric.episodeEndMarker || 'MISSING_END'}"`,
                 metric.algorithm,
                 metric.currentReward.toFixed(2),
                 metric.averageReward.toFixed(2),
@@ -465,8 +477,49 @@ class Simulation {
                 metric.evilRobotEnabled,
                 metric.maxSteps,
                 metric.timestamp
-            ].join(','))
+            ];
+            
+            // Log first 3 rows for debugging
+            if (index < 3) {
+                console.log(`🔍 DEBUG: Row ${index + 1} data:`, row);
+                console.log(`🔍 DEBUG: Markers in row ${index + 1}:`, {
+                    start: metric.episodeStartMarker,
+                    end: metric.episodeEndMarker,
+                    startInRow: row[1],
+                    endInRow: row[2]
+                });
+            }
+            
+            return row.join(',');
+        });
+
+        const csvContent = [
+            `# REINFORCEMENT LEARNING TRAINING REPORT`,
+            `# Generated: ${new Date().toISOString()}`,
+            `# Episode transitions are marked with START/END markers`,
+            `# Look for EPISODE_X_START and EPISODE_X_END to identify episode boundaries`,
+            `# Total episodes in this export: ${this.episodeMetrics.length}`,
+            `# DEBUG: This CSV should contain episode markers in columns 2 and 3`,
+            `#`,
+            headers.join(','),
+            ...dataRows
         ].join('\n');
+
+        // DEBUG: Show exact CSV content for first few lines
+        const csvLines = csvContent.split('\n');
+        console.log('🔍 DEBUG: CSV Header line:', csvLines[7]); // Headers line
+        console.log('🔍 DEBUG: CSV First data line:', csvLines[8]); // First data row
+        console.log('🔍 DEBUG: CSV Second data line:', csvLines[9]); // Second data row
+        
+        // DEBUG: Check if markers exist in the CSV content
+        const hasStartMarkers = csvContent.includes('EPISODE_') && csvContent.includes('_START');
+        const hasEndMarkers = csvContent.includes('_END');
+        console.log('🔍 DEBUG: CSV content check:', {
+            hasStartMarkers,
+            hasEndMarkers,
+            csvLength: csvContent.length,
+            linesCount: csvLines.length
+        });
 
         // Create and download the CSV file
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -477,15 +530,17 @@ class Simulation {
         // Generate filename with timestamp and algorithm
         const algorithm = document.getElementById('algorithm').value;
         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
-        link.setAttribute('download', `RL_Training_Report_${algorithm}_${timestamp}.csv`);
+        const filename = `RL_Training_Report_${algorithm}_${timestamp}_DEBUG.csv`;
+        link.setAttribute('download', filename);
         link.style.visibility = 'hidden';
         
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         
-        console.log(`Exported ${this.episodeMetrics.length} episodes to CSV`);
-        alert(`Successfully exported ${this.episodeMetrics.length} episodes to CSV!`);
+        console.log(`✅ Exported ${this.episodeMetrics.length} episodes to CSV: ${filename}`);
+        console.log('🔍 DEBUG: If markers are missing in the downloaded file, there may be a browser/download issue');
+        alert(`Successfully exported ${this.episodeMetrics.length} episodes to CSV with episode markers!\n\nFilename: ${filename}\n\nCheck the browser console for detailed debug info about the markers.`);
     }
 
     // Q-table Export functionality (Q-Learning only)
@@ -766,7 +821,24 @@ class Simulation {
 
             this.episodeCount++;
             
-            // Set current episode number in agent for tracking
+            // 🚀 EPISODE START MARKER - ADD VISUAL INDICATOR
+            console.log(`\n🔄 ===== EPISODE ${this.episodeCount} START =====`);
+            console.log(`📍 Environment Reset: Wall-E back to start position`);
+            console.log(`🎯 Algorithm: ${document.getElementById('algorithm').value.toUpperCase()}`);
+            console.log(`🗑️ Initial Trash Count: ${this.env.trashCount}`);
+            
+            // ADD VISUAL EPISODE START INDICATOR
+            const statusElement = document.getElementById('episodeCounter');
+            statusElement.style.backgroundColor = '#4CAF50';
+            statusElement.style.color = 'white';
+            statusElement.style.fontWeight = 'bold';
+            setTimeout(() => {
+                statusElement.style.backgroundColor = '';
+                statusElement.style.color = '';
+                statusElement.style.fontWeight = '';
+            }, 1000);
+            
+            // 🎯 NOTIFY AGENT OF NEW EPISODE FOR TABLE TRACKING
             if (this.agent.setEpisode) {
                 this.agent.setEpisode(this.episodeCount);
             }
@@ -830,6 +902,24 @@ class Simulation {
             const episodeTime = (Date.now() - this.episodeStartTime) / 1000;
             const isSuccessful = this.env.successfulCompletions > previousSuccessCount;
             
+            // 🏁 EPISODE END MARKER - ADD VISUAL INDICATOR
+            console.log(`\n🏁 ===== EPISODE ${this.episodeCount} END =====`);
+            console.log(`⏱️ Duration: ${episodeTime.toFixed(2)}s | Steps: ${this.currentEpisodeSteps}`);
+            console.log(`💰 Total Reward: ${this.totalReward.toFixed(2)}`);
+            console.log(`🗑️ Trash Collected: ${initialTrashCount - this.env.trashCount}/${initialTrashCount}`);
+            console.log(`${isSuccessful ? '✅ SUCCESS!' : '❌ Failed'} | Overall Success Rate: ${((this.env.successfulCompletions / this.episodeCount) * 100).toFixed(1)}%`);
+            
+            // ADD VISUAL EPISODE END INDICATOR
+            const rewardElement = document.getElementById('currentReward');
+            rewardElement.style.backgroundColor = isSuccessful ? '#4CAF50' : '#f44336';
+            rewardElement.style.color = 'white';
+            rewardElement.style.fontWeight = 'bold';
+            setTimeout(() => {
+                rewardElement.style.backgroundColor = '';
+                rewardElement.style.color = '';
+                rewardElement.style.fontWeight = '';
+            }, 1500);
+            
             // Fix average reward calculation for CSV export
             let avgReward = this.totalReward; // Default to current reward for first episode
             if (this.episodeMetrics.length > 0) {
@@ -843,7 +933,7 @@ class Simulation {
                 episode: this.episodeCount,
                 algorithm: document.getElementById('algorithm').value,
                 currentReward: this.totalReward,
-                averageReward: avgReward, // Fixed calculation
+                averageReward: avgReward,
                 stepsToComplete: this.currentEpisodeSteps,
                 episodeTime: episodeTime,
                 trashRemaining: this.env.trashCount,
@@ -856,10 +946,15 @@ class Simulation {
                 gamma: this.getParams().gamma,
                 evilRobotEnabled: document.getElementById('evilRobotEnabled').checked,
                 maxSteps: this.env.maxSteps,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                episodeStartMarker: `EPISODE_${this.episodeCount}_START`,
+                episodeEndMarker: `EPISODE_${this.episodeCount}_END`
             };
             
             this.episodeMetrics.push(episodeMetric);
+
+            // Show episode transition notification on screen
+            this.showEpisodeNotification(this.episodeCount, isSuccessful, this.totalReward);
 
             // Update chart with a slight delay to prevent performance issues
             if (this.chartUpdateTimeout) {
@@ -873,6 +968,10 @@ class Simulation {
             if (this.running && this.episodeCount < parseInt(document.getElementById('episodes').value)) {
                 requestAnimationFrame(() => this.runEpisode());
             } else {
+                console.log(`\n🎯 ===== TRAINING COMPLETE =====`);
+                console.log(`📊 Total Episodes: ${this.episodeCount}`);
+                console.log(`✅ Successful Completions: ${this.env.successfulCompletions}`);
+                console.log(`📈 Final Success Rate: ${((this.env.successfulCompletions / this.episodeCount) * 100).toFixed(1)}%`);
                 this.running = false;
                 document.getElementById('startButton').textContent = 'Start Training';
                 this.env.enableEditing();
@@ -883,6 +982,46 @@ class Simulation {
             document.getElementById('startButton').textContent = 'Start Training';
             this.env.enableEditing();
         }
+    }
+
+    // Add visual episode notification method
+    showEpisodeNotification(episodeNum, isSuccessful, reward) {
+        // Create or get notification element
+        let notification = document.getElementById('episodeNotification');
+        if (!notification) {
+            notification = document.createElement('div');
+            notification.id = 'episodeNotification';
+            notification.style.cssText = `
+                position: fixed;
+                top: 10px;
+                right: 10px;
+                padding: 10px 15px;
+                border-radius: 5px;
+                font-weight: bold;
+                z-index: 1000;
+                transition: opacity 0.3s ease;
+                max-width: 300px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            `;
+            document.body.appendChild(notification);
+        }
+
+        // Set notification content and style
+        const bgColor = isSuccessful ? '#4CAF50' : '#f44336';
+        const status = isSuccessful ? '✅ SUCCESS' : '❌ FAILED';
+        
+        notification.style.backgroundColor = bgColor;
+        notification.style.color = 'white';
+        notification.style.opacity = '1';
+        notification.innerHTML = `
+            🔄 <strong>Episode ${episodeNum} Complete</strong><br>
+            ${status} | Reward: ${reward.toFixed(1)}
+        `;
+
+        // Auto-hide after 2 seconds
+        setTimeout(() => {
+            notification.style.opacity = '0';
+        }, 2000);
     }
 }
 

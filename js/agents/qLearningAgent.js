@@ -4,6 +4,20 @@ class QLearningAgent extends BaseAgent {
         this.qTable = {};
         this.minQValue = -20;
         this.maxQValue = 50;
+        
+        // Track Q-table updates for export
+        this.tableHistory = [];
+        this.currentEpisode = 0;
+        this.stepCount = 0;
+    }
+
+    // Set current episode number (called from simulation)
+    setEpisode(episodeNum) {
+        this.currentEpisode = episodeNum;
+        this.stepCount = 0;
+        
+        // Mark the first entry of each episode as a reset
+        this.isEpisodeStart = true;
     }
 
     selectAction(state) {
@@ -17,7 +31,6 @@ class QLearningAgent extends BaseAgent {
         // Update state values in environment
         const stateStr = this.stateToString(state);
         if (this.qTable[stateStr]) {
-            // Use normalized Q-value as state value
             const stateValue = Math.max(...this.qTable[stateStr]);
             window.env.updateStateValue(state.wallE.x, state.wallE.y, stateValue);
         }
@@ -55,13 +68,39 @@ class QLearningAgent extends BaseAgent {
             this.minQValue = Math.min(this.minQValue, newQ);
             this.maxQValue = Math.max(this.maxQValue, newQ);
 
+            this.stepCount++;
+
+            // Track this update for export with Episode_Reset flag
+            this.tableHistory.push({
+                state: stateStr,
+                wallEX: state.wallE.x,
+                wallEY: state.wallE.y,
+                evilRobotX: state.evilRobot.x,
+                evilRobotY: state.evilRobot.y,
+                trashCount: state.trashCount,
+                action: action,
+                actionName: this.getActionName(action),
+                qValue: newQ,
+                isOptimal: this.qTable[stateStr][action] === Math.max(...this.qTable[stateStr]),
+                episodeReset: this.isEpisodeStart || false
+            });
+
+            // Clear episode start flag after first update
+            this.isEpisodeStart = false;
+
             // Normalize Q-values if they get too large
             if (Math.abs(this.maxQValue) > 1000 || Math.abs(this.minQValue) > 1000) {
                 this.normalizeQValues();
             }
+
         } catch (error) {
             console.error('Error in Q-Learning update:', error);
         }
+    }
+
+    getActionName(action) {
+        const actionNames = ['Up', 'Right', 'Down', 'Left'];
+        return actionNames[action] || 'Unknown';
     }
 
     normalizeQValues() {
@@ -82,43 +121,43 @@ class QLearningAgent extends BaseAgent {
         this.qTable = {};
         this.minQValue = -20;
         this.maxQValue = 50;
+        this.episodeTransitions = [];
+        this.currentEpisode = 0;
+        this.tableHistory = []; // Reset Q-table history
     }
 
-    // Export Q-table with state-action values
+    // Export Q-table in the exact format shown in CSV
     exportQTable() {
-        const qtableData = [];
-        const actionNames = ['Up', 'Right', 'Down', 'Left'];
+        const csvData = ['State,Wall-E X,Wall-E Y,Evil Robot,Evil Robot,Trash Cou,Action ID,Action Na,Q-Value,Is Optima,EPISODE'];
         
-        // Convert Q-table to exportable format
-        for (const [stateStr, qValues] of Object.entries(this.qTable)) {
-            // Parse state string back to components
-            const stateParts = stateStr.split(',');
-            if (stateParts.length >= 5) {
-                const wallE_x = stateParts[0];
-                const wallE_y = stateParts[1];
-                const evil_x = stateParts[2];
-                const evil_y = stateParts[3];
-                const trashCount = stateParts[4];
-                
-                // Add a row for each action
-                for (let action = 0; action < qValues.length; action++) {
-                    qtableData.push({
-                        state: stateStr,
-                        wallE_x: wallE_x,
-                        wallE_y: wallE_y,
-                        evil_x: evil_x,
-                        evil_y: evil_y,
-                        trashCount: trashCount,
-                        action: action,
-                        actionName: actionNames[action],
-                        qValue: qValues[action].toFixed(4),
-                        isOptimalAction: qValues[action] === Math.max(...qValues) ? 'TRUE' : 'FALSE'
-                    });
-                }
-            }
-        }
+        this.tableHistory.forEach((entry, index) => {
+            csvData.push([
+                entry.state,
+                entry.wallEX,
+                entry.wallEY,
+                entry.evilRobotX,
+                entry.evilRobotY,
+                entry.trashCount,
+                entry.action,
+                entry.actionName,
+                entry.qValue.toFixed(4),
+                entry.isOptimal ? 'TRUE' : 'FALSE',
+                entry.episodeReset ? 'TRUE' : 'FALSE'
+            ].join(','));
+        });
         
-        return qtableData;
+        const csvContent = csvData.join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `q_learning_qtable_export_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        
+        URL.revokeObjectURL(url);
+        
+        return this.tableHistory;
     }
 
     // Get Q-table statistics
