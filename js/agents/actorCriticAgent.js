@@ -57,6 +57,11 @@ class ActorCriticAgent extends BaseAgent {
             const input = this.stateToTensor(state);
             const actionLogits = this.actorNetwork.forward(input);
             
+            // Debug: Log action logits to see what the network is outputting
+            if (this.episodeCount % 10 === 0 && this.currentEpisode % 10 === 0) {
+                console.log(`Action logits: [${actionLogits.map(x => x.toFixed(3)).join(', ')}]`);
+            }
+            
             // Check for NaN values in network output
             if (actionLogits.some(val => isNaN(val))) {
                 console.warn('NaN detected in actor network output, using random action');
@@ -70,9 +75,18 @@ class ActorCriticAgent extends BaseAgent {
                 window.env.updateStateValue(state.wallE.x, state.wallE.y, normalizedValue);
             }
             
-            // Apply softmax with temperature - fix NaN issues
+            // Apply softmax with temperature - use more balanced approach
             const maxLogit = Math.max(...actionLogits);
-            const expLogits = actionLogits.map(x => Math.exp((x - maxLogit) / this.temperature));
+            const minLogit = Math.min(...actionLogits);
+            
+            // If logits are too extreme, normalize them
+            let normalizedLogits = actionLogits;
+            if (maxLogit - minLogit > 10) {
+                const range = maxLogit - minLogit;
+                normalizedLogits = actionLogits.map(x => (x - minLogit) / range * 4 - 2); // Scale to [-2, 2]
+            }
+            
+            const expLogits = normalizedLogits.map(x => Math.exp(x / this.temperature));
             const sum = expLogits.reduce((a, b) => a + b, 0);
             
             // Prevent division by zero
@@ -83,27 +97,33 @@ class ActorCriticAgent extends BaseAgent {
             
             const probabilities = expLogits.map(x => x / sum);
             
+            // Debug: Log probabilities occasionally
+            if (this.episodeCount % 10 === 0 && this.currentEpisode % 10 === 0) {
+                console.log(`Action probabilities: [${probabilities.map(x => x.toFixed(3)).join(', ')}]`);
+            }
+            
             // Check for NaN probabilities
             if (probabilities.some(p => isNaN(p))) {
                 console.warn('NaN probabilities detected, using random action');
                 return Math.floor(Math.random() * this.actionSpace);
             }
 
-            // Epsilon-greedy exploration
-            if (Math.random() < this.epsilon) {
-                return Math.floor(Math.random() * this.actionSpace);
-            }
+            // Add exploration noise to prevent getting stuck in local optima
+            const explorationNoise = 0.1;
+            const noisyProbs = probabilities.map(p => p + (Math.random() - 0.5) * explorationNoise);
+            const noisySum = noisyProbs.reduce((a, b) => a + Math.max(0, b), 0);
+            const finalProbs = noisyProbs.map(p => Math.max(0, p) / noisySum);
 
             // Sample from policy using roulette wheel selection
             const rand = Math.random();
             let cumSum = 0;
-            for (let i = 0; i < probabilities.length; i++) {
-                cumSum += probabilities[i];
+            for (let i = 0; i < finalProbs.length; i++) {
+                cumSum += finalProbs[i];
                 if (rand < cumSum) {
                     return i;
                 }
             }
-            return probabilities.length - 1;
+            return finalProbs.length - 1;
         } catch (error) {
             console.error('Error in selectAction:', error);
             return Math.floor(Math.random() * this.actionSpace);
@@ -236,24 +256,55 @@ class ActorCriticAgent extends BaseAgent {
 
     updateNetworks(states, actions, returns, advantages) {
         try {
+            console.log(`Updating networks with ${states.length} samples`);
+            console.log(`Sample returns: [${returns.slice(0, 3).map(r => r.toFixed(3)).join(', ')}...]`);
+            console.log(`Sample advantages: [${advantages.slice(0, 3).map(a => a.toFixed(3)).join(', ')}...]`);
+            
             // Update critic network - train it to predict the actual returns
             for (let i = 0; i < states.length; i++) {
-                const prediction = this.criticNetwork.forward(states[i])[0];
+                const currentPrediction = this.criticNetwork.forward(states[i])[0];
                 const target = returns[i];
-                const error = target - prediction;
+                const criticError = target - currentPrediction;
                 
-                // Use larger learning rate and direct error for critic
-                const criticGradient = [error * this.criticLearningRate * 10]; // Increase learning signal
+                console.log(`Critic update ${i}: prediction=${currentPrediction.toFixed(3)}, target=${target.toFixed(3)}, error=${criticError.toFixed(3)}`);
+                
+                // Use proper gradient for critic - the error should be the gradient
+                const criticGradient = [criticError * this.criticLearningRate];
                 this.criticNetwork.backward(states[i], criticGradient, 1.0);
+                
+                // Verify the update worked
+                const newPrediction = this.criticNetwork.forward(states[i])[0];
+                console.log(`After update: new prediction=${newPrediction.toFixed(3)}`);
             }
 
-            // Update actor network
+            // Update actor network with proper policy gradients
             for (let i = 0; i < states.length; i++) {
-                const actionProbs = this.actorNetwork.forward(states[i]);
-                const actionGradients = actionProbs.map((_, j) => 
-                    j === actions[i] ? advantages[i] * this.actorLearningRate : 0
-                );
-                this.actorNetwork.backward(states[i], actionGradients, 1.0);
+                const actionLogits = this.actorNetwork.forward(states[i]);
+                
+                // Calculate proper policy gradient
+                const advantage = advantages[i];
+                const actionTaken = actions[i];
+                
+                // Create gradient that increases probability of good actions, decreases bad ones
+                const actorGradients = actionLogits.map((logit, actionIndex) => {
+                    if (actionIndex === actionTaken) {
+                        // Increase probability if advantage is positive, decrease if negative
+                        return advantage * this.actorLearningRate * 0.1;
+                    } else {
+                        // Slightly decrease probability of non-taken actions if taken action was good
+                        return -advantage * this.actorLearningRate * 0.025;
+                    }
+                });
+                
+                this.actorNetwork.backward(states[i], actorGradients, 1.0);
+            }
+            
+            // Test network learning by checking a few random states
+            console.log('Testing network predictions after update:');
+            for (let i = 0; i < Math.min(3, states.length); i++) {
+                const testValue = this.criticNetwork.forward(states[i])[0];
+                const testLogits = this.actorNetwork.forward(states[i]);
+                console.log(`State ${i}: Value=${testValue.toFixed(3)}, Logits=[${testLogits.map(l => l.toFixed(3)).join(', ')}]`);
             }
             
             console.log(`Networks updated for ${states.length} transitions`);
@@ -473,13 +524,18 @@ class NeuralNetwork {
     constructor(layers) {
         this.weights = [];
         this.biases = [];
+        this.layers = layers;
         
-        // Initialize weights and biases
+        // Better weight initialization using Xavier/Glorot initialization
         for (let i = 0; i < layers.length - 1; i++) {
+            const fanIn = layers[i];
+            const fanOut = layers[i + 1];
+            const limit = Math.sqrt(6 / (fanIn + fanOut));
+            
             this.weights.push(
                 Array(layers[i]).fill().map(() => 
                     Array(layers[i + 1]).fill().map(() => 
-                        Math.random() * 2 - 1
+                        (Math.random() * 2 - 1) * limit
                     )
                 )
             );
@@ -488,7 +544,7 @@ class NeuralNetwork {
     }
 
     forward(input) {
-        let current = input;
+        let current = [...input]; // Copy input
         
         // Forward propagation through layers
         for (let i = 0; i < this.weights.length; i++) {
@@ -498,7 +554,8 @@ class NeuralNetwork {
                 for (let k = 0; k < this.weights[i].length; k++) {
                     sum += current[k] * this.weights[i][k][j];
                 }
-                layer.push(i === this.weights.length - 1 ? sum : Math.max(0, sum)); // ReLU except last layer
+                // Use ReLU for hidden layers, linear for output layer
+                layer.push(i === this.weights.length - 1 ? sum : Math.max(0, sum));
             }
             current = layer;
         }
@@ -507,19 +564,53 @@ class NeuralNetwork {
     }
 
     backward(input, gradients, learningRate) {
-        // Simple SGD update
-        const output = this.forward(input);
+        // Improved backward pass with proper gradient computation
+        if (!input || !gradients || gradients.length === 0) {
+            return;
+        }
         
-        for (let i = this.weights.length - 1; i >= 0; i--) {
-            for (let j = 0; j < this.weights[i].length; j++) {
-                for (let k = 0; k < this.weights[i][j].length; k++) {
-                    const grad = gradients[k] * input[j];
-                    this.weights[i][j][k] += learningRate * grad;
+        // Update weights and biases for the output layer
+        const lastLayerIndex = this.weights.length - 1;
+        
+        // Get the input to the last layer (output of second-to-last layer)
+        let layerInput = [...input];
+        for (let layer = 0; layer < lastLayerIndex; layer++) {
+            const nextLayerInput = [];
+            for (let j = 0; j < this.weights[layer][0].length; j++) {
+                let sum = this.biases[layer][j];
+                for (let k = 0; k < this.weights[layer].length; k++) {
+                    sum += layerInput[k] * this.weights[layer][k][j];
+                }
+                nextLayerInput.push(Math.max(0, sum)); // ReLU
+            }
+            layerInput = nextLayerInput;
+        }
+        
+        // Update output layer weights
+        for (let j = 0; j < this.weights[lastLayerIndex].length; j++) {
+            for (let k = 0; k < this.weights[lastLayerIndex][j].length; k++) {
+                if (!isNaN(gradients[k]) && !isNaN(layerInput[j])) {
+                    this.weights[lastLayerIndex][j][k] += learningRate * gradients[k] * layerInput[j];
                 }
             }
-            
-            for (let j = 0; j < this.biases[i].length; j++) {
-                this.biases[i][j] += learningRate * gradients[j];
+        }
+        
+        // Update output layer biases
+        for (let j = 0; j < this.biases[lastLayerIndex].length; j++) {
+            if (!isNaN(gradients[j])) {
+                this.biases[lastLayerIndex][j] += learningRate * gradients[j];
+            }
+        }
+        
+        // Simplified update for hidden layers (updating all layers)
+        for (let layer = 0; layer < this.weights.length; layer++) {
+            for (let j = 0; j < this.weights[layer].length; j++) {
+                for (let k = 0; k < this.weights[layer][j].length; k++) {
+                    const avgGradient = gradients.reduce((a, b) => a + b, 0) / gradients.length;
+                    if (!isNaN(avgGradient)) {
+                        this.weights[layer][j][k] += learningRate * avgGradient * 0.01; // Smaller update for hidden layers
+                    }
+                }
             }
         }
     }
