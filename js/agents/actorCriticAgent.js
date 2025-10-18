@@ -157,73 +157,69 @@ class ActorCriticAgent extends BaseAgent {
             });
         }
 
+        if (this.states.length === 0) {
+            console.warn('Episode ended with no states recorded');
+            return;
+        }
+
         try {
+            console.log(`Actor-Critic episodeEnd: Processing ${this.states.length} states, ${this.rewards.length} rewards`);
+            
             // Calculate returns and advantages
-            const values = this.states.map(state => this.criticNetwork.forward(state)[0]);
+            const values = this.states.map(state => {
+                const val = this.criticNetwork.forward(state)[0];
+                return isNaN(val) ? 0 : val;
+            });
+            
             const returns = [];
             let G = 0;
             
-            // Calculate returns in reverse
+            // Calculate returns in reverse (Monte Carlo returns)
             for (let t = this.rewards.length - 1; t >= 0; t--) {
                 G = this.rewards[t] + this.gamma * G;
                 returns.unshift(G);
-                
-                // Track min/max state values
-                this.minStateValue = Math.min(this.minStateValue, G);
-                this.maxStateValue = Math.max(this.maxStateValue, G);
             }
 
-            // Normalize returns for stable training
-            const minReturn = Math.min(...returns);
-            const maxReturn = Math.max(...returns);
-            const normalizedReturns = returns.map(G => 
-                (G - minReturn) / (maxReturn - minReturn + 1e-8) * 70 - 20
-            );
+            console.log(`Returns range: ${Math.min(...returns).toFixed(4)} to ${Math.max(...returns).toFixed(4)}`);
+            console.log(`Values range: ${Math.min(...values).toFixed(4)} to ${Math.max(...values).toFixed(4)}`);
 
-            // Calculate advantages
-            const advantages = normalizedReturns.map((G, i) => G - values[i]);
+            // Don't normalize returns - use raw values for better learning
+            const advantages = returns.map((G, i) => G - values[i]);
 
-            // Clip advantages for stability
+            // Clip advantages for stability but keep them meaningful
             const clippedAdvantages = advantages.map(a => 
-                Math.max(Math.min(a, 10), -10)
+                Math.max(Math.min(a, 50), -50)  // Increased clipping range
             );
 
-            // Track value updates for export with Episode_Reset column
+            console.log(`Advantages range: ${Math.min(...clippedAdvantages).toFixed(4)} to ${Math.max(...clippedAdvantages).toFixed(4)}`);
+
+            // Update networks with the raw returns (not normalized)
+            this.updateNetworks(this.states, this.actions, returns, clippedAdvantages);
+
+            // Track value updates for export
             for (let t = 0; t < this.states.length; t++) {
-                const stateStr = this.stateToString({
-                    wallE: { x: 0, y: 0 }, // This would need actual state reconstruction
-                    evilRobot: { x: 0, y: 0 },
-                    trashCount: 0
-                });
-                
                 this.updateHistory.push({
                     episode: this.currentEpisode,
                     step: t + 1,
                     state: `Step_${t + 1}`,
                     action: this.actions[t],
-                    stateValue: normalizedReturns[t].toFixed(4),
+                    stateValue: returns[t].toFixed(4),
                     reward: this.rewards[t],
                     timestamp: new Date().toISOString(),
-                    episodeReset: 'FALSE'  // Normal update, not a reset
+                    episodeReset: 'FALSE'
                 });
             }
 
-            // Update networks with mini-batch
-            const batchSize = Math.min(32, this.states.length);
-            for (let i = 0; i < this.states.length; i += batchSize) {
-                const batchEnd = Math.min(i + batchSize, this.states.length);
-                this.updateNetworks(
-                    this.states.slice(i, batchEnd),
-                    this.actions.slice(i, batchEnd),
-                    normalizedReturns.slice(i, batchEnd),
-                    clippedAdvantages.slice(i, batchEnd)
-                );
-            }
+            // Update state value bounds
+            this.minStateValue = Math.min(this.minStateValue, ...returns);
+            this.maxStateValue = Math.max(this.maxStateValue, ...returns);
 
             // Log episode statistics
             this.episodeCount++;
             const totalReward = this.rewards.reduce((a, b) => a + b, 0);
             this.addReward(totalReward);
+
+            console.log(`Episode ${this.episodeCount} complete. Total reward: ${totalReward.toFixed(2)}, Avg return: ${(returns.reduce((a,b) => a+b, 0) / returns.length).toFixed(4)}`);
 
             // Clear episode data
             this.states = [];
@@ -239,26 +235,30 @@ class ActorCriticAgent extends BaseAgent {
     }
 
     updateNetworks(states, actions, returns, advantages) {
-        // Update critic
-        for (let i = 0; i < states.length; i++) {
-            this.criticNetwork.backward(
-                states[i],
-                [returns[i]],
-                this.criticLearningRate
-            );
-        }
+        try {
+            // Update critic network - train it to predict the actual returns
+            for (let i = 0; i < states.length; i++) {
+                const prediction = this.criticNetwork.forward(states[i])[0];
+                const target = returns[i];
+                const error = target - prediction;
+                
+                // Use larger learning rate and direct error for critic
+                const criticGradient = [error * this.criticLearningRate * 10]; // Increase learning signal
+                this.criticNetwork.backward(states[i], criticGradient, 1.0);
+            }
 
-        // Update actor
-        for (let i = 0; i < states.length; i++) {
-            const actionProbs = this.actorNetwork.forward(states[i]);
-            const actionGradients = actionProbs.map((_, j) => 
-                j === actions[i] ? advantages[i] / this.temperature : 0
-            );
-            this.actorNetwork.backward(
-                states[i],
-                actionGradients,
-                this.actorLearningRate
-            );
+            // Update actor network
+            for (let i = 0; i < states.length; i++) {
+                const actionProbs = this.actorNetwork.forward(states[i]);
+                const actionGradients = actionProbs.map((_, j) => 
+                    j === actions[i] ? advantages[i] * this.actorLearningRate : 0
+                );
+                this.actorNetwork.backward(states[i], actionGradients, 1.0);
+            }
+            
+            console.log(`Networks updated for ${states.length} transitions`);
+        } catch (error) {
+            console.error('Error updating networks:', error);
         }
     }
 
@@ -277,61 +277,41 @@ class ActorCriticAgent extends BaseAgent {
 
     reset() {
         super.reset();
+        // Reset neural networks - create fresh networks
         this.actorNetwork = new NeuralNetwork([24, 64, 32, 4]);
         this.criticNetwork = new NeuralNetwork([24, 64, 32, 1]);
+        
+        // Reset episode data
         this.states = [];
         this.actions = [];
         this.rewards = [];
         this.episodeCount = 0;
+        
+        // Reset state value tracking
         this.minStateValue = -20;
         this.maxStateValue = 50;
+        
+        // Reset tracking data for exports
         this.episodeTransitions = [];
         this.currentEpisode = 0;
-        this.updateHistory = []; // Reset update history
+        this.updateHistory = [];
+        
+        console.log('Actor-Critic agent reset: Neural networks reinitialized, value/policy tables and history cleared');
     }
 
     // Export value table with Episode_Reset column
     exportValueTable() {
-        // Export update history with Episode_Reset column
-        const csvData = ['Episode,Step,State,Action,State_Value,Reward,Episode_Reset,Timestamp'];
-        
-        this.updateHistory.forEach(entry => {
-            csvData.push(`${entry.episode},${entry.step},${entry.state},${entry.action},${entry.stateValue},${entry.reward || ''},${entry.episodeReset || 'FALSE'},${entry.timestamp}`);
-        });
-        
-        const csvContent = csvData.join('\n');
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `actor_critic_values_${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
-        
-        URL.revokeObjectURL(url);
-
-        // ...rest of existing valueData logic...
         const valueData = [];
         
-        // Add episode transition markers at the beginning
-        for (const transition of this.episodeTransitions) {
-            valueData.push({
-                state: transition.marker,
-                wallE_x: `--- ${transition.type} ---`,
-                wallE_y: `Episode ${transition.episode}`,
-                evil_x: '---',
-                evil_y: '---',
-                trashCount: '---',
-                stateValue: '0.0000',
-                episodeMarker: transition.marker,
-                timestamp: transition.timestamp
-            });
+        // Check if we have any training data at all
+        if (this.episodeCount === 0 && this.updateHistory.length === 0) {
+            console.log('No training data found for Actor-Critic value export');
+            return valueData;
         }
         
-        // Only export states that have been actually encountered during training
-        // We'll sample states that produce non-uniform probabilities
-        const meaningfulStates = [];
+        console.log(`Actor-Critic: Exporting value table. Episodes: ${this.episodeCount}, Updates: ${this.updateHistory.length}`);
         
+        // Export all possible states - after training, the network should have learned something
         for (let wallE_x = 0; wallE_x < 6; wallE_x++) {
             for (let wallE_y = 0; wallE_y < 6; wallE_y++) {
                 for (let evil_x = 0; evil_x < 6; evil_x++) {
@@ -343,44 +323,30 @@ class ActorCriticAgent extends BaseAgent {
                                 trashCount: trashCount
                             };
                             
-                            const input = this.stateToTensor(state);
-                            const actionLogits = this.actorNetwork.forward(input);
-                            
-                            // Check if this state has learned meaningful probabilities
-                            if (!actionLogits.some(val => isNaN(val))) {
-                                const maxLogit = Math.max(...actionLogits);
-                                const expLogits = actionLogits.map(x => Math.exp((x - maxLogit) / this.temperature));
-                                const sum = expLogits.reduce((a, b) => a + b, 0);
+                            try {
+                                const input = this.stateToTensor(state);
+                                const stateStr = this.stateToString(state);
+                                let stateValue = this.criticNetwork.forward(input)[0];
                                 
-                                if (sum > 0 && !isNaN(sum)) {
-                                    const probabilities = expLogits.map(x => x / sum);
-                                    
-                                    // Check if probabilities are meaningfully different from uniform (0.25 each)
-                                    const maxProb = Math.max(...probabilities);
-                                    const minProb = Math.min(...probabilities);
-                                    
-                                    // Only include if there's significant learning (not uniform distribution)
-                                    if (maxProb - minProb > 0.1) { // Threshold for meaningful learning
-                                        const stateStr = this.stateToString(state);
-                                        let stateValue = this.criticNetwork.forward(input)[0];
-                                        
-                                        if (isNaN(stateValue)) {
-                                            stateValue = 0;
-                                        }
-                                        
-                                        valueData.push({
-                                            state: stateStr,
-                                            wallE_x: wallE_x,
-                                            wallE_y: wallE_y,
-                                            evil_x: evil_x,
-                                            evil_y: evil_y,
-                                            trashCount: trashCount,
-                                            stateValue: stateValue.toFixed(4),
-                                            episodeMarker: '',
-                                            timestamp: ''
-                                        });
-                                    }
+                                if (isNaN(stateValue)) {
+                                    stateValue = 0;
                                 }
+                                
+                                // Include all states if we've done any training
+                                if (this.episodeCount > 0) {
+                                    valueData.push({
+                                        state: stateStr,
+                                        wallE_x: wallE_x,
+                                        wallE_y: wallE_y,
+                                        evil_x: evil_x,
+                                        evil_y: evil_y,
+                                        trashCount: trashCount,
+                                        stateValue: stateValue.toFixed(4)
+                                    });
+                                }
+                            } catch (error) {
+                                console.error('Error processing state for value export:', error);
+                                continue;
                             }
                         }
                     }
@@ -388,6 +354,7 @@ class ActorCriticAgent extends BaseAgent {
             }
         }
         
+        console.log(`Actor-Critic value export: Generated ${valueData.length} entries`);
         return valueData;
     }
 
@@ -396,26 +363,13 @@ class ActorCriticAgent extends BaseAgent {
         const policyData = [];
         const actionNames = ['Up', 'Right', 'Down', 'Left'];
         
-        // Add episode transition markers at the beginning
-        for (const transition of this.episodeTransitions) {
-            policyData.push({
-                state: transition.marker,
-                wallE_x: `--- ${transition.type} ---`,
-                wallE_y: `Episode ${transition.episode}`,
-                evil_x: '---',
-                evil_y: '---',
-                trashCount: '---',
-                optimalAction: '---',
-                optimalActionName: transition.marker,
-                actionProbUp: '0.0000',
-                actionProbRight: '0.0000',
-                actionProbDown: '0.0000',
-                actionProbLeft: '0.0000',
-                maxProbability: '0.0000',
-                episodeMarker: transition.marker,
-                timestamp: transition.timestamp
-            });
+        // Check if we have any training data at all
+        if (this.episodeCount === 0 && this.updateHistory.length === 0) {
+            console.log('No training data found for Actor-Critic policy export');
+            return policyData;
         }
+        
+        console.log(`Actor-Critic: Exporting policy table. Episodes: ${this.episodeCount}, Updates: ${this.updateHistory.length}`);
         
         for (let wallE_x = 0; wallE_x < 6; wallE_x++) {
             for (let wallE_y = 0; wallE_y < 6; wallE_y++) {
@@ -428,13 +382,13 @@ class ActorCriticAgent extends BaseAgent {
                                 trashCount: trashCount
                             };
                             
-                            const stateStr = this.stateToString(state);
-                            const input = this.stateToTensor(state);
-                            const actionLogits = this.actorNetwork.forward(input);
-                            
-                            let probabilities = [0.25, 0.25, 0.25, 0.25]; // Default uniform distribution
-                            
                             try {
+                                const stateStr = this.stateToString(state);
+                                const input = this.stateToTensor(state);
+                                const actionLogits = this.actorNetwork.forward(input);
+                                
+                                let probabilities = [0.25, 0.25, 0.25, 0.25]; // Default uniform distribution
+                                
                                 if (!actionLogits.some(val => isNaN(val))) {
                                     const maxLogit = Math.max(...actionLogits);
                                     const expLogits = actionLogits.map(x => Math.exp((x - maxLogit) / this.temperature));
@@ -449,34 +403,30 @@ class ActorCriticAgent extends BaseAgent {
                                         }
                                     }
                                 }
-                            } catch (error) {
-                                probabilities = [0.25, 0.25, 0.25, 0.25];
-                            }
-                            
-                            // Only export states with meaningful learning (not uniform distribution)
-                            const maxProb = Math.max(...probabilities);
-                            const minProb = Math.min(...probabilities);
-                            
-                            if (maxProb - minProb > 0.1) { // Threshold for meaningful learning
-                                const maxProbIndex = probabilities.indexOf(Math.max(...probabilities));
                                 
-                                policyData.push({
-                                    state: stateStr,
-                                    wallE_x: wallE_x,
-                                    wallE_y: wallE_y,
-                                    evil_x: evil_x,
-                                    evil_y: evil_y,
-                                    trashCount: trashCount,
-                                    optimalAction: maxProbIndex,
-                                    optimalActionName: actionNames[maxProbIndex],
-                                    actionProbUp: probabilities[0].toFixed(4),
-                                    actionProbRight: probabilities[1].toFixed(4),
-                                    actionProbDown: probabilities[2].toFixed(4),
-                                    actionProbLeft: probabilities[3].toFixed(4),
-                                    maxProbability: Math.max(...probabilities).toFixed(4),
-                                    episodeMarker: '',
-                                    timestamp: ''
-                                });
+                                // Include all states if we've done any training - remove the threshold
+                                if (this.episodeCount > 0) {
+                                    const maxProbIndex = probabilities.indexOf(Math.max(...probabilities));
+                                    
+                                    policyData.push({
+                                        state: stateStr,
+                                        wallE_x: wallE_x,
+                                        wallE_y: wallE_y,
+                                        evil_x: evil_x,
+                                        evil_y: evil_y,
+                                        trashCount: trashCount,
+                                        optimalAction: maxProbIndex,
+                                        optimalActionName: actionNames[maxProbIndex],
+                                        actionProbUp: probabilities[0].toFixed(4),
+                                        actionProbRight: probabilities[1].toFixed(4),
+                                        actionProbDown: probabilities[2].toFixed(4),
+                                        actionProbLeft: probabilities[3].toFixed(4),
+                                        maxProbability: Math.max(...probabilities).toFixed(4)
+                                    });
+                                }
+                            } catch (error) {
+                                console.error('Error processing state for policy export:', error);
+                                continue;
                             }
                         }
                     }
@@ -484,6 +434,7 @@ class ActorCriticAgent extends BaseAgent {
             }
         }
         
+        console.log(`Actor-Critic policy export: Generated ${policyData.length} entries`);
         return policyData;
     }
 

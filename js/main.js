@@ -425,18 +425,8 @@ class Simulation {
             return;
         }
 
-        // DEBUG: Log the first few metrics to see what's being stored
-        console.log('🔍 DEBUG: First 3 episode metrics:', this.episodeMetrics.slice(0, 3));
-        console.log('🔍 DEBUG: Episode markers check:', {
-            episode1Start: this.episodeMetrics[0]?.episodeStartMarker,
-            episode1End: this.episodeMetrics[0]?.episodeEndMarker,
-            totalMetrics: this.episodeMetrics.length
-        });
-
         const headers = [
             'Episode',
-            'Episode Start Marker',
-            'Episode End Marker',
             'Algorithm',
             'Current Reward',
             'Average Reward (Last 10)',
@@ -455,12 +445,10 @@ class Simulation {
             'Timestamp'
         ];
 
-        // Create rows with explicit debugging
-        const dataRows = this.episodeMetrics.map((metric, index) => {
+        // Create rows without the redundant episode marker columns
+        const dataRows = this.episodeMetrics.map((metric) => {
             const row = [
                 metric.episode,
-                `"${metric.episodeStartMarker || 'MISSING_START'}"`,
-                `"${metric.episodeEndMarker || 'MISSING_END'}"`,
                 metric.algorithm,
                 metric.currentReward.toFixed(2),
                 metric.averageReward.toFixed(2),
@@ -479,47 +467,17 @@ class Simulation {
                 metric.timestamp
             ];
             
-            // Log first 3 rows for debugging
-            if (index < 3) {
-                console.log(`🔍 DEBUG: Row ${index + 1} data:`, row);
-                console.log(`🔍 DEBUG: Markers in row ${index + 1}:`, {
-                    start: metric.episodeStartMarker,
-                    end: metric.episodeEndMarker,
-                    startInRow: row[1],
-                    endInRow: row[2]
-                });
-            }
-            
             return row.join(',');
         });
 
         const csvContent = [
             `# REINFORCEMENT LEARNING TRAINING REPORT`,
             `# Generated: ${new Date().toISOString()}`,
-            `# Episode transitions are marked with START/END markers`,
-            `# Look for EPISODE_X_START and EPISODE_X_END to identify episode boundaries`,
             `# Total episodes in this export: ${this.episodeMetrics.length}`,
-            `# DEBUG: This CSV should contain episode markers in columns 2 and 3`,
             `#`,
             headers.join(','),
             ...dataRows
         ].join('\n');
-
-        // DEBUG: Show exact CSV content for first few lines
-        const csvLines = csvContent.split('\n');
-        console.log('🔍 DEBUG: CSV Header line:', csvLines[7]); // Headers line
-        console.log('🔍 DEBUG: CSV First data line:', csvLines[8]); // First data row
-        console.log('🔍 DEBUG: CSV Second data line:', csvLines[9]); // Second data row
-        
-        // DEBUG: Check if markers exist in the CSV content
-        const hasStartMarkers = csvContent.includes('EPISODE_') && csvContent.includes('_START');
-        const hasEndMarkers = csvContent.includes('_END');
-        console.log('🔍 DEBUG: CSV content check:', {
-            hasStartMarkers,
-            hasEndMarkers,
-            csvLength: csvContent.length,
-            linesCount: csvLines.length
-        });
 
         // Create and download the CSV file
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -530,7 +488,7 @@ class Simulation {
         // Generate filename with timestamp and algorithm
         const algorithm = document.getElementById('algorithm').value;
         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
-        const filename = `RL_Training_Report_${algorithm}_${timestamp}_DEBUG.csv`;
+        const filename = `RL_Training_Report_${algorithm}_${timestamp}.csv`;
         link.setAttribute('download', filename);
         link.style.visibility = 'hidden';
         
@@ -539,8 +497,7 @@ class Simulation {
         document.body.removeChild(link);
         
         console.log(`✅ Exported ${this.episodeMetrics.length} episodes to CSV: ${filename}`);
-        console.log('🔍 DEBUG: If markers are missing in the downloaded file, there may be a browser/download issue');
-        alert(`Successfully exported ${this.episodeMetrics.length} episodes to CSV with episode markers!\n\nFilename: ${filename}\n\nCheck the browser console for detailed debug info about the markers.`);
+        alert(`Successfully exported ${this.episodeMetrics.length} episodes to CSV!\n\nFilename: ${filename}`);
     }
 
     // Q-table Export functionality (Q-Learning only)
@@ -946,9 +903,7 @@ class Simulation {
                 gamma: this.getParams().gamma,
                 evilRobotEnabled: document.getElementById('evilRobotEnabled').checked,
                 maxSteps: this.env.maxSteps,
-                timestamp: new Date().toISOString(),
-                episodeStartMarker: `EPISODE_${this.episodeCount}_START`,
-                episodeEndMarker: `EPISODE_${this.episodeCount}_END`
+                timestamp: new Date().toISOString()
             };
             
             this.episodeMetrics.push(episodeMetric);

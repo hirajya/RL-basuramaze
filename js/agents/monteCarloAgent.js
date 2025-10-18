@@ -146,67 +146,41 @@ class MonteCarloAgent extends BaseAgent {
 
     reset() {
         super.reset();
+        // Reset Q-table (used for return values)
         this.qTable = {};
+        
+        // Reset episode data
         this.episodeStates = [];
         this.episodeActions = [];
         this.episodeRewards = [];
         this.episodeCount = 0;
+        
+        // Reset tracking data for exports
         this.episodeTransitions = [];
         this.currentEpisode = 0;
-        this.returnHistory = []; // Reset return history
+        this.returnHistory = [];
+        
+        console.log('Monte Carlo agent reset: Return table, policy table, and episode history cleared');
     }
 
     // Export state-action return table with episode reset column
     exportReturnTable() {
-        // Export return history with Episode_Reset column
-        const csvData = ['Episode,Step,State,Action,Return_Value,Reward,Episode_Reset,Timestamp'];
-        
-        this.returnHistory.forEach(entry => {
-            csvData.push(`${entry.episode},${entry.step},${entry.state},${entry.action},${entry.returnValue},${entry.reward || ''},${entry.episodeReset || 'FALSE'},${entry.timestamp}`);
-        });
-        
-        const csvContent = csvData.join('\n');
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `monte_carlo_returns_${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
-        
-        URL.revokeObjectURL(url);
-
-        // ...rest of existing returnData logic...
         const returnData = [];
         const actionNames = ['Up', 'Right', 'Down', 'Left'];
-        
-        // Add episode transition markers at the beginning
-        for (const transition of this.episodeTransitions) {
-            returnData.push({
-                state: transition.marker,
-                wallE_x: `--- ${transition.type} ---`,
-                wallE_y: `Episode ${transition.episode}`,
-                evil_x: '---',
-                evil_y: '---',
-                trashCount: '---',
-                action: '---',
-                actionName: transition.marker,
-                returnValue: '0.0000',
-                isOptimalAction: '---',
-                episodeMarker: transition.marker,
-                timestamp: transition.timestamp
-            });
-        }
         
         // Only export states that were actually visited (have non-zero values)
         for (const [stateStr, qValues] of Object.entries(this.qTable)) {
             const stateParts = stateStr.split(',');
             if (stateParts.length >= 5) {
-                const wallE_x = stateParts[0];
-                const wallE_y = stateParts[1];
-                const evil_x = stateParts[2];
-                const evil_y = stateParts[3];
-                const trashCount = stateParts[4];
+                const wallE_x = parseInt(stateParts[0]);
+                const wallE_y = parseInt(stateParts[1]);
+                const evil_x = parseInt(stateParts[2]);
+                const evil_y = parseInt(stateParts[3]);
+                const trashCount = parseInt(stateParts[4]);
+                
+                // Find the optimal action for this state
+                const maxReturnValue = Math.max(...qValues);
+                const optimalAction = qValues.indexOf(maxReturnValue);
                 
                 // Only add rows for actions that have been updated (non-zero values)
                 for (let action = 0; action < qValues.length; action++) {
@@ -221,9 +195,7 @@ class MonteCarloAgent extends BaseAgent {
                             action: action,
                             actionName: actionNames[action],
                             returnValue: qValues[action].toFixed(4),
-                            isOptimalAction: qValues[action] === Math.max(...qValues) ? 'TRUE' : 'FALSE',
-                            episodeMarker: '',
-                            timestamp: ''
+                            isOptimalAction: action === optimalAction ? 'TRUE' : 'FALSE'
                         });
                     }
                 }
@@ -238,44 +210,31 @@ class MonteCarloAgent extends BaseAgent {
         const policyData = [];
         const actionNames = ['Up', 'Right', 'Down', 'Left'];
         
-        // Add episode transition markers at the beginning
-        for (const transition of this.episodeTransitions) {
-            policyData.push({
-                state: transition.marker,
-                wallE_x: `--- ${transition.type} ---`,
-                wallE_y: `Episode ${transition.episode}`,
-                evil_x: '---',
-                evil_y: '---',
-                trashCount: '---',
-                optimalAction: '---',
-                optimalActionName: transition.marker,
-                returnValue: '0.0000',
-                episodeMarker: transition.marker,
-                timestamp: transition.timestamp
-            });
-        }
-        
         // Only export states that were actually visited
         for (const [stateStr, qValues] of Object.entries(this.qTable)) {
             const stateParts = stateStr.split(',');
             if (stateParts.length >= 5) {
                 // Check if this state has meaningful values
                 if (qValues.some(q => Math.abs(q) > 0.001)) {
+                    const wallE_x = parseInt(stateParts[0]);
+                    const wallE_y = parseInt(stateParts[1]);
+                    const evil_x = parseInt(stateParts[2]);
+                    const evil_y = parseInt(stateParts[3]);
+                    const trashCount = parseInt(stateParts[4]);
+                    
                     const maxValue = Math.max(...qValues);
                     const optimalAction = qValues.indexOf(maxValue);
                     
                     policyData.push({
                         state: stateStr,
-                        wallE_x: stateParts[0],
-                        wallE_y: stateParts[1],
-                        evil_x: stateParts[2],
-                        evil_y: stateParts[3],
-                        trashCount: stateParts[4],
+                        wallE_x: wallE_x,
+                        wallE_y: wallE_y,
+                        evil_x: evil_x,
+                        evil_y: evil_y,
+                        trashCount: trashCount,
                         optimalAction: optimalAction,
                         optimalActionName: actionNames[optimalAction],
-                        returnValue: maxValue.toFixed(4),
-                        episodeMarker: '',
-                        timestamp: ''
+                        returnValue: maxValue.toFixed(4)
                     });
                 }
             }

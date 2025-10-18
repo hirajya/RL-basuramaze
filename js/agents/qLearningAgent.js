@@ -118,46 +118,62 @@ class QLearningAgent extends BaseAgent {
 
     reset() {
         super.reset();
+        // Reset Q-table and related data structures
         this.qTable = {};
         this.minQValue = -20;
         this.maxQValue = 50;
-        this.episodeTransitions = [];
+        
+        // Reset tracking data for exports
+        this.tableHistory = [];
         this.currentEpisode = 0;
-        this.tableHistory = []; // Reset Q-table history
+        this.stepCount = 0;
+        
+        // Reset episode flags
+        this.isEpisodeStart = false;
+        
+        console.log('Q-Learning agent reset: Q-table and history cleared');
     }
 
-    // Export Q-table in the exact format shown in CSV
+    // Export Q-table data for the main simulation export
     exportQTable() {
-        const csvData = ['State,Wall-E X,Wall-E Y,Evil Robot,Evil Robot,Trash Cou,Action ID,Action Na,Q-Value,Is Optima,EPISODE'];
+        const qtableData = [];
+        const actionNames = ['Up', 'Right', 'Down', 'Left'];
         
-        this.tableHistory.forEach((entry, index) => {
-            csvData.push([
-                entry.state,
-                entry.wallEX,
-                entry.wallEY,
-                entry.evilRobotX,
-                entry.evilRobotY,
-                entry.trashCount,
-                entry.action,
-                entry.actionName,
-                entry.qValue.toFixed(4),
-                entry.isOptimal ? 'TRUE' : 'FALSE',
-                entry.episodeReset ? 'TRUE' : 'FALSE'
-            ].join(','));
-        });
+        // Only export states that have been actually visited (non-zero Q-values)
+        for (const [stateStr, qValues] of Object.entries(this.qTable)) {
+            const stateParts = stateStr.split(',');
+            if (stateParts.length >= 5) {
+                const wallE_x = parseInt(stateParts[0]);
+                const wallE_y = parseInt(stateParts[1]);
+                const evil_x = parseInt(stateParts[2]);
+                const evil_y = parseInt(stateParts[3]);
+                const trashCount = parseInt(stateParts[4]);
+                
+                // Find the optimal action for this state
+                const maxQValue = Math.max(...qValues);
+                const optimalAction = qValues.indexOf(maxQValue);
+                
+                // Only add rows for actions that have been updated (non-zero values)
+                for (let action = 0; action < qValues.length; action++) {
+                    if (Math.abs(qValues[action]) > 0.001) { // Only export meaningful values
+                        qtableData.push({
+                            state: stateStr,
+                            wallE_x: wallE_x,
+                            wallE_y: wallE_y,
+                            evil_x: evil_x,
+                            evil_y: evil_y,
+                            trashCount: trashCount,
+                            action: action,
+                            actionName: actionNames[action],
+                            qValue: qValues[action].toFixed(4),
+                            isOptimalAction: action === optimalAction ? 'TRUE' : 'FALSE'
+                        });
+                    }
+                }
+            }
+        }
         
-        const csvContent = csvData.join('\n');
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `q_learning_qtable_export_${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
-        
-        URL.revokeObjectURL(url);
-        
-        return this.tableHistory;
+        return qtableData;
     }
 
     // Get Q-table statistics
