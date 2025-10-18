@@ -102,4 +102,85 @@ class MonteCarloAgent extends BaseAgent {
         this.episodeRewards = [];
         this.episodeCount = 0;
     }
+
+    // Export state-action return table
+    exportReturnTable() {
+        const returnData = [];
+        const actionNames = ['Up', 'Right', 'Down', 'Left'];
+        
+        for (const [stateStr, qValues] of Object.entries(this.qTable)) {
+            const stateParts = stateStr.split(',');
+            if (stateParts.length >= 5) {
+                const wallE_x = stateParts[0];
+                const wallE_y = stateParts[1];
+                const evil_x = stateParts[2];
+                const evil_y = stateParts[3];
+                const trashCount = stateParts[4];
+                
+                // Add a row for each action
+                for (let action = 0; action < qValues.length; action++) {
+                    returnData.push({
+                        state: stateStr,
+                        wallE_x: wallE_x,
+                        wallE_y: wallE_y,
+                        evil_x: evil_x,
+                        evil_y: evil_y,
+                        trashCount: trashCount,
+                        action: action,
+                        actionName: actionNames[action],
+                        returnValue: qValues[action].toFixed(4),
+                        isOptimalAction: qValues[action] === Math.max(...qValues) ? 'TRUE' : 'FALSE'
+                    });
+                }
+            }
+        }
+        
+        return returnData;
+    }
+
+    // Export policy table (optimal actions only)
+    exportPolicyTable() {
+        const policyData = [];
+        const actionNames = ['Up', 'Right', 'Down', 'Left'];
+        
+        for (const [stateStr, qValues] of Object.entries(this.qTable)) {
+            const stateParts = stateStr.split(',');
+            if (stateParts.length >= 5) {
+                const maxValue = Math.max(...qValues);
+                const optimalAction = qValues.indexOf(maxValue);
+                
+                policyData.push({
+                    state: stateStr,
+                    wallE_x: stateParts[0],
+                    wallE_y: stateParts[1],
+                    evil_x: stateParts[2],
+                    evil_y: stateParts[3],
+                    trashCount: stateParts[4],
+                    optimalAction: optimalAction,
+                    optimalActionName: actionNames[optimalAction],
+                    returnValue: maxValue.toFixed(4)
+                });
+            }
+        }
+        
+        return policyData;
+    }
+
+    // Get return table statistics
+    getReturnTableStats() {
+        const states = Object.keys(this.qTable).length;
+        const totalEntries = states * 4; // 4 actions per state
+        const allReturns = Object.values(this.qTable).flat();
+        const nonZeroEntries = allReturns.filter(r => Math.abs(r) > 0.001).length;
+        
+        return {
+            totalStates: states,
+            totalEntries: totalEntries,
+            nonZeroEntries: nonZeroEntries,
+            coverage: totalEntries > 0 ? (nonZeroEntries / totalEntries * 100).toFixed(1) + '%' : '0%',
+            minReturn: allReturns.length > 0 ? Math.min(...allReturns).toFixed(4) : '0',
+            maxReturn: allReturns.length > 0 ? Math.max(...allReturns).toFixed(4) : '0',
+            avgReturn: allReturns.length > 0 ? (allReturns.reduce((a, b) => a + b, 0) / allReturns.length).toFixed(4) : '0'
+        };
+    }
 }

@@ -83,4 +83,59 @@ class QLearningAgent extends BaseAgent {
         this.minQValue = -20;
         this.maxQValue = 50;
     }
+
+    // Export Q-table with state-action values
+    exportQTable() {
+        const qtableData = [];
+        const actionNames = ['Up', 'Right', 'Down', 'Left'];
+        
+        // Convert Q-table to exportable format
+        for (const [stateStr, qValues] of Object.entries(this.qTable)) {
+            // Parse state string back to components
+            const stateParts = stateStr.split(',');
+            if (stateParts.length >= 5) {
+                const wallE_x = stateParts[0];
+                const wallE_y = stateParts[1];
+                const evil_x = stateParts[2];
+                const evil_y = stateParts[3];
+                const trashCount = stateParts[4];
+                
+                // Add a row for each action
+                for (let action = 0; action < qValues.length; action++) {
+                    qtableData.push({
+                        state: stateStr,
+                        wallE_x: wallE_x,
+                        wallE_y: wallE_y,
+                        evil_x: evil_x,
+                        evil_y: evil_y,
+                        trashCount: trashCount,
+                        action: action,
+                        actionName: actionNames[action],
+                        qValue: qValues[action].toFixed(4),
+                        isOptimalAction: qValues[action] === Math.max(...qValues) ? 'TRUE' : 'FALSE'
+                    });
+                }
+            }
+        }
+        
+        return qtableData;
+    }
+
+    // Get Q-table statistics
+    getQTableStats() {
+        const states = Object.keys(this.qTable).length;
+        const totalEntries = states * 4; // 4 actions per state
+        const nonZeroEntries = Object.values(this.qTable)
+            .flat()
+            .filter(q => Math.abs(q) > 0.001).length;
+        
+        return {
+            totalStates: states,
+            totalEntries: totalEntries,
+            nonZeroEntries: nonZeroEntries,
+            coverage: totalEntries > 0 ? (nonZeroEntries / totalEntries * 100).toFixed(1) + '%' : '0%',
+            minQValue: this.minQValue.toFixed(4),
+            maxQValue: this.maxQValue.toFixed(4)
+        };
+    }
 }

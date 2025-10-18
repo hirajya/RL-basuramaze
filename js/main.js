@@ -182,6 +182,24 @@ class Simulation {
             this.exportToCSV();
         });
         
+        // Add Q-table export button event listener
+        document.getElementById('exportQTableButton').addEventListener('click', () => {
+            console.log('Exporting Q-table...');
+            this.exportQTable();
+        });
+        
+        // Add Monte Carlo export button event listener
+        document.getElementById('exportMonteCarloButton').addEventListener('click', () => {
+            console.log('Exporting Monte Carlo tables...');
+            this.exportMonteCarloTables();
+        });
+        
+        // Add Actor-Critic export button event listener
+        document.getElementById('exportActorCriticButton').addEventListener('click', () => {
+            console.log('Exporting Actor-Critic tables...');
+            this.exportActorCriticTables();
+        });
+        
         document.getElementById('algorithm').addEventListener('change', (e) => {
             console.log('Switching to algorithm:', e.target.value);
             if (this.agent) {
@@ -364,6 +382,11 @@ class Simulation {
             // Update successful completions counter
             document.getElementById('successfulCompletions').textContent = this.env.successfulCompletions;
 
+            // Calculate and display success rate
+            const successRate = this.episodeCount > 0 ? 
+                (this.env.successfulCompletions / this.episodeCount * 100) : 0;
+            document.getElementById('successRate').textContent = successRate.toFixed(1) + '%';
+
             // Update best and average rewards - fix NaN issue
             const allRewards = this.chart.data.datasets[0].data;
             if (allRewards.length > 0) {
@@ -465,6 +488,272 @@ class Simulation {
         alert(`Successfully exported ${this.episodeMetrics.length} episodes to CSV!`);
     }
 
+    // Q-table Export functionality (Q-Learning only)
+    exportQTable() {
+        const algorithm = document.getElementById('algorithm').value;
+        
+        if (algorithm !== 'q_learning') {
+            alert('Q-table export is only available for Q-Learning algorithm. Please switch to Q-Learning and train some episodes first.');
+            return;
+        }
+
+        if (!this.agent || !this.agent.qTable || Object.keys(this.agent.qTable).length === 0) {
+            alert('No Q-table data available to export. Please run some Q-Learning episodes first.');
+            return;
+        }
+
+        try {
+            // Get Q-table data and statistics
+            const qtableData = this.agent.exportQTable();
+            const stats = this.agent.getQTableStats();
+
+            if (qtableData.length === 0) {
+                alert('Q-table is empty. Please run some episodes first.');
+                return;
+            }
+
+            // Create CSV headers
+            const headers = [
+                'State',
+                'Wall-E X',
+                'Wall-E Y', 
+                'Evil Robot X',
+                'Evil Robot Y',
+                'Trash Count',
+                'Action ID',
+                'Action Name',
+                'Q-Value',
+                'Is Optimal Action'
+            ];
+
+            // Create CSV content
+            const csvContent = [
+                `# Q-LEARNING Q-TABLE EXPORT`,
+                `# Generated: ${new Date().toISOString()}`,
+                `# Algorithm: Q-Learning`,
+                `# Total States: ${stats.totalStates}`,
+                `# Total Entries: ${stats.totalEntries}`,
+                `# Non-Zero Entries: ${stats.nonZeroEntries}`,
+                `# Coverage: ${stats.coverage}`,
+                `# Q-Value Range: ${stats.minQValue} to ${stats.maxQValue}`,
+                `#`,
+                headers.join(','),
+                ...qtableData.map(row => [
+                    `"${row.state}"`,          
+                    row.wallE_x,
+                    row.wallE_y,
+                    row.evil_x,
+                    row.evil_y,
+                    row.trashCount,
+                    row.action,
+                    `"${row.actionName}"`,     
+                    row.qValue,
+                    row.isOptimalAction
+                ].join(','))
+            ].join('\n');
+
+            // Download the CSV file
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+            this.downloadCSV(csvContent, `Q_Table_Export_${timestamp}.csv`);
+            
+            console.log(`Exported Q-table with ${qtableData.length} entries`);
+            alert(`🧠 Q-TABLE SUCCESSFULLY EXPORTED! 🧠\n\n📊 STATISTICS:\n• States: ${stats.totalStates}\n• Q-Values: ${stats.totalEntries}\n• Coverage: ${stats.coverage}\n• Value Range: ${stats.minQValue} to ${stats.maxQValue}`);
+            
+        } catch (error) {
+            console.error('Error exporting Q-table:', error);
+            alert('Error exporting Q-table. Please check the console for details.');
+        }
+    }
+
+    // Monte Carlo Return Table Export functionality
+    exportMonteCarloTables() {
+        const algorithm = document.getElementById('algorithm').value;
+        
+        if (algorithm !== 'monte_carlo') {
+            alert('Return table export is only available for Monte Carlo algorithm. Please switch to Monte Carlo and train some episodes first.');
+            return;
+        }
+
+        if (!this.agent || !this.agent.qTable || Object.keys(this.agent.qTable).length === 0) {
+            alert('No return table data available to export. Please run some Monte Carlo episodes first.');
+            return;
+        }
+
+        try {
+            // Get return table data and statistics
+            const returnData = this.agent.exportReturnTable();
+            const policyData = this.agent.exportPolicyTable();
+            const stats = this.agent.getReturnTableStats();
+
+            if (returnData.length === 0) {
+                alert('Return table is empty. Please run some episodes first.');
+                return;
+            }
+
+            // Export Return Table
+            const returnHeaders = [
+                'State', 'Wall-E X', 'Wall-E Y', 'Evil Robot X', 'Evil Robot Y', 
+                'Trash Count', 'Action ID', 'Action Name', 'Return Value', 'Is Optimal Action'
+            ];
+
+            const returnCSV = [
+                `# MONTE CARLO RETURN TABLE EXPORT`,
+                `# Generated: ${new Date().toISOString()}`,
+                `# Algorithm: Monte Carlo`,
+                `# Total States: ${stats.totalStates}`,
+                `# Total Entries: ${stats.totalEntries}`,
+                `# Non-Zero Entries: ${stats.nonZeroEntries}`,
+                `# Coverage: ${stats.coverage}`,
+                `# Return Range: ${stats.minReturn} to ${stats.maxReturn}`,
+                `# Average Return: ${stats.avgReturn}`,
+                `#`,
+                returnHeaders.join(','),
+                ...returnData.map(row => [
+                    `"${row.state}"`, row.wallE_x, row.wallE_y, row.evil_x, row.evil_y,
+                    row.trashCount, row.action, `"${row.actionName}"`, row.returnValue, row.isOptimalAction
+                ].join(','))
+            ].join('\n');
+
+            // Export Policy Table
+            const policyHeaders = [
+                'State', 'Wall-E X', 'Wall-E Y', 'Evil Robot X', 'Evil Robot Y',
+                'Trash Count', 'Optimal Action ID', 'Optimal Action Name', 'Return Value'
+            ];
+
+            const policyCSV = [
+                `# MONTE CARLO POLICY TABLE EXPORT`,
+                `# Generated: ${new Date().toISOString()}`,
+                `# Algorithm: Monte Carlo`,
+                `# Total States: ${stats.totalStates}`,
+                `# This shows the optimal action for each state`,
+                `#`,
+                policyHeaders.join(','),
+                ...policyData.map(row => [
+                    `"${row.state}"`, row.wallE_x, row.wallE_y, row.evil_x, row.evil_y,
+                    row.trashCount, row.optimalAction, `"${row.optimalActionName}"`, row.returnValue
+                ].join(','))
+            ].join('\n');
+
+            // Download both tables
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+            this.downloadCSV(returnCSV, `MC_Return_Table_${timestamp}.csv`);
+            
+            setTimeout(() => {
+                this.downloadCSV(policyCSV, `MC_Policy_Table_${timestamp}.csv`);
+            }, 500);
+            
+            console.log(`Exported Monte Carlo tables with ${returnData.length} return entries and ${policyData.length} policy entries`);
+            alert(`🧠 MONTE CARLO TABLES EXPORTED! 🧠\n\n📊 STATISTICS:\n• States: ${stats.totalStates}\n• Return Entries: ${stats.totalEntries}\n• Coverage: ${stats.coverage}\n• Return Range: ${stats.minReturn} to ${stats.maxReturn}\n\nTwo files downloaded:\n1. Return Table (all state-action returns)\n2. Policy Table (optimal actions only)`);
+            
+        } catch (error) {
+            console.error('Error exporting Monte Carlo tables:', error);
+            alert('Error exporting Monte Carlo tables. Please check the console for details.');
+        }
+    }
+
+    // Actor-Critic Value and Policy Tables Export functionality
+    exportActorCriticTables() {
+        const algorithm = document.getElementById('algorithm').value;
+        
+        if (algorithm !== 'actor_critic') {
+            alert('Value/Policy table export is only available for Actor-Critic algorithm. Please switch to Actor-Critic and train some episodes first.');
+            return;
+        }
+
+        if (!this.agent) {
+            alert('No Actor-Critic agent available. Please run some Actor-Critic episodes first.');
+            return;
+        }
+
+        try {
+            // Get value and policy table data
+            const valueData = this.agent.exportValueTable();
+            const policyData = this.agent.exportPolicyTable();
+            const stats = this.agent.getActorCriticStats();
+
+            if (valueData.length === 0 || policyData.length === 0) {
+                alert('Actor-Critic tables are empty. Please run some episodes first.');
+                return;
+            }
+
+            // Export Value Table
+            const valueHeaders = [
+                'State', 'Wall-E X', 'Wall-E Y', 'Evil Robot X', 'Evil Robot Y',
+                'Trash Count', 'State Value'
+            ];
+
+            const valueCSV = [
+                `# ACTOR-CRITIC VALUE TABLE EXPORT`,
+                `# Generated: ${new Date().toISOString()}`,
+                `# Algorithm: Actor-Critic`,
+                `# Network Architecture: ${stats.networkArchitecture}`,
+                `# Temperature: ${stats.temperature}`,
+                `# Sample Value Range: ${stats.minSampleValue} to ${stats.maxSampleValue}`,
+                `# Average Sample Value: ${stats.avgSampleValue}`,
+                `# Total States: ${stats.totalStates}`,
+                `#`,
+                valueHeaders.join(','),
+                ...valueData.map(row => [
+                    `"${row.state}"`, row.wallE_x, row.wallE_y, row.evil_x, row.evil_y,
+                    row.trashCount, row.stateValue
+                ].join(','))
+            ].join('\n');
+
+            // Export Policy Table
+            const policyHeaders = [
+                'State', 'Wall-E X', 'Wall-E Y', 'Evil Robot X', 'Evil Robot Y',
+                'Trash Count', 'Optimal Action ID', 'Optimal Action Name',
+                'Prob Up', 'Prob Right', 'Prob Down', 'Prob Left', 'Max Probability'
+            ];
+
+            const policyCSV = [
+                `# ACTOR-CRITIC POLICY TABLE EXPORT`,
+                `# Generated: ${new Date().toISOString()}`,
+                `# Algorithm: Actor-Critic`,
+                `# Network Architecture: ${stats.networkArchitecture}`,
+                `# Temperature: ${stats.temperature}`,
+                `# This shows action probabilities for each state`,
+                `#`,
+                policyHeaders.join(','),
+                ...policyData.map(row => [
+                    `"${row.state}"`, row.wallE_x, row.wallE_y, row.evil_x, row.evil_y,
+                    row.trashCount, row.optimalAction, `"${row.optimalActionName}"`,
+                    row.actionProbUp, row.actionProbRight, row.actionProbDown, 
+                    row.actionProbLeft, row.maxProbability
+                ].join(','))
+            ].join('\n');
+
+            // Download both tables
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+            this.downloadCSV(valueCSV, `AC_Value_Table_${timestamp}.csv`);
+            
+            setTimeout(() => {
+                this.downloadCSV(policyCSV, `AC_Policy_Table_${timestamp}.csv`);
+            }, 500);
+            
+            console.log(`Exported Actor-Critic tables with ${valueData.length} value entries and ${policyData.length} policy entries`);
+            alert(`🎭 ACTOR-CRITIC TABLES EXPORTED! 🎭\n\n📊 STATISTICS:\n• Network: ${stats.networkArchitecture}\n• Temperature: ${stats.temperature}\n• Total States: ${stats.totalStates}\n• Sample Value Range: ${stats.minSampleValue} to ${stats.maxSampleValue}\n\nTwo files downloaded:\n1. Value Table (state values from critic)\n2. Policy Table (action probabilities from actor)`);
+            
+        } catch (error) {
+            console.error('Error exporting Actor-Critic tables:', error);
+            alert('Error exporting Actor-Critic tables. Please check the console for details.');
+        }
+    }
+
+    // Helper method to download CSV files
+    downloadCSV(csvContent, filename) {
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
     async runEpisode() {
         try {
             if (!this.running) return;
@@ -476,6 +765,12 @@ class Simulation {
             }
 
             this.episodeCount++;
+            
+            // Set current episode number in agent for tracking
+            if (this.agent.setEpisode) {
+                this.agent.setEpisode(this.episodeCount);
+            }
+            
             let state = this.env.reset();
             this.totalReward = 0;
             let done = false;
@@ -534,14 +829,21 @@ class Simulation {
             // Record episode metrics
             const episodeTime = (Date.now() - this.episodeStartTime) / 1000;
             const isSuccessful = this.env.successfulCompletions > previousSuccessCount;
-            const allRewards = this.chart.data.datasets[0].data.concat([this.totalReward]);
-            const avgReward = allRewards.slice(-10).reduce((a, b) => a + b, 0) / Math.min(allRewards.length, 10);
+            
+            // Fix average reward calculation for CSV export
+            let avgReward = this.totalReward; // Default to current reward for first episode
+            if (this.episodeMetrics.length > 0) {
+                // Get the last 10 episode rewards from stored metrics
+                const recentMetrics = this.episodeMetrics.slice(-9); // Get last 9 episodes
+                const recentRewards = recentMetrics.map(m => m.currentReward).concat([this.totalReward]); // Add current
+                avgReward = recentRewards.reduce((a, b) => a + b, 0) / recentRewards.length;
+            }
             
             const episodeMetric = {
                 episode: this.episodeCount,
                 algorithm: document.getElementById('algorithm').value,
                 currentReward: this.totalReward,
-                averageReward: avgReward,
+                averageReward: avgReward, // Fixed calculation
                 stepsToComplete: this.currentEpisodeSteps,
                 episodeTime: episodeTime,
                 trashRemaining: this.env.trashCount,

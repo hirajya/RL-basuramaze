@@ -3,12 +3,12 @@ class ActorCriticAgent extends BaseAgent {
         super(params);
         
         // Store separate learning rates for actor and critic
-        this.actorLearningRate = params.actorLearningRate || 0.001;
+        this.actorLearningRate = params.actorLearningRate || 0.01;
         this.criticLearningRate = params.criticLearningRate || 0.01;
         this.temperature = params.temperature || 1.0;
         
         // Initialize networks
-        this.actorNetwork = new NeuralNetwork([24, 64, 32, 4]);  // Deeper network
+        this.actorNetwork = new NeuralNetwork([24, 64, 32, 4]);
         this.criticNetwork = new NeuralNetwork([24, 64, 32, 1]);
         this.states = [];
         this.actions = [];
@@ -50,19 +50,39 @@ class ActorCriticAgent extends BaseAgent {
     selectAction(state) {
         try {
             const input = this.stateToTensor(state);
-            const actionProbs = this.actorNetwork.forward(input);
+            const actionLogits = this.actorNetwork.forward(input);
+            
+            // Check for NaN values in network output
+            if (actionLogits.some(val => isNaN(val))) {
+                console.warn('NaN detected in actor network output, using random action');
+                return Math.floor(Math.random() * this.actionSpace);
+            }
             
             // Get and normalize state value
             const stateValue = this.criticNetwork.forward(input)[0];
-            const normalizedValue = Math.max(this.minStateValue, Math.min(this.maxStateValue, stateValue));
+            if (!isNaN(stateValue)) {
+                const normalizedValue = Math.max(this.minStateValue, Math.min(this.maxStateValue, stateValue));
+                window.env.updateStateValue(state.wallE.x, state.wallE.y, normalizedValue);
+            }
             
-            // Update state value in environment
-            window.env.updateStateValue(state.wallE.x, state.wallE.y, normalizedValue);
+            // Apply softmax with temperature - fix NaN issues
+            const maxLogit = Math.max(...actionLogits);
+            const expLogits = actionLogits.map(x => Math.exp((x - maxLogit) / this.temperature));
+            const sum = expLogits.reduce((a, b) => a + b, 0);
             
-            // Apply softmax with temperature
-            const expProbs = actionProbs.map(x => Math.exp(x / this.temperature));
-            const sum = expProbs.reduce((a, b) => a + b, 0);
-            const probabilities = expProbs.map(x => x / sum);
+            // Prevent division by zero
+            if (sum === 0 || isNaN(sum)) {
+                console.warn('Invalid softmax sum, using random action');
+                return Math.floor(Math.random() * this.actionSpace);
+            }
+            
+            const probabilities = expLogits.map(x => x / sum);
+            
+            // Check for NaN probabilities
+            if (probabilities.some(p => isNaN(p))) {
+                console.warn('NaN probabilities detected, using random action');
+                return Math.floor(Math.random() * this.actionSpace);
+            }
 
             // Epsilon-greedy exploration
             if (Math.random() < this.epsilon) {
@@ -78,7 +98,7 @@ class ActorCriticAgent extends BaseAgent {
                     return i;
                 }
             }
-            return probabilities.length - 1;  // Fallback to last action
+            return probabilities.length - 1;
         } catch (error) {
             console.error('Error in selectAction:', error);
             return Math.floor(Math.random() * this.actionSpace);
@@ -214,6 +234,149 @@ class ActorCriticAgent extends BaseAgent {
         this.episodeCount = 0;
         this.minStateValue = -20;
         this.maxStateValue = 50;
+    }
+
+    // Export value table from critic network
+    exportValueTable() {
+        const valueData = [];
+        
+        // Generate all possible states within reasonable bounds
+        for (let wallE_x = 0; wallE_x < 6; wallE_x++) {
+            for (let wallE_y = 0; wallE_y < 6; wallE_y++) {
+                for (let evil_x = 0; evil_x < 6; evil_x++) {
+                    for (let evil_y = 0; evil_y < 6; evil_y++) {
+                        for (let trashCount = 0; trashCount <= 3; trashCount++) {
+                            const state = {
+                                wallE: { x: wallE_x, y: wallE_y },
+                                evilRobot: { x: evil_x, y: evil_y },
+                                trashCount: trashCount
+                            };
+                            
+                            const stateStr = this.stateToString(state);
+                            const input = this.stateToTensor(state);
+                            let stateValue = this.criticNetwork.forward(input)[0];
+                            
+                            // Handle NaN values
+                            if (isNaN(stateValue)) {
+                                stateValue = 0;
+                            }
+                            
+                            valueData.push({
+                                state: stateStr,
+                                wallE_x: wallE_x,
+                                wallE_y: wallE_y,
+                                evil_x: evil_x,
+                                evil_y: evil_y,
+                                trashCount: trashCount,
+                                stateValue: stateValue.toFixed(4)
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        
+        return valueData;
+    }
+
+    // Export policy table from actor network
+    exportPolicyTable() {
+        const policyData = [];
+        const actionNames = ['Up', 'Right', 'Down', 'Left'];
+        
+        // Generate all possible states within reasonable bounds
+        for (let wallE_x = 0; wallE_x < 6; wallE_x++) {
+            for (let wallE_y = 0; wallE_y < 6; wallE_y++) {
+                for (let evil_x = 0; evil_x < 6; evil_x++) {
+                    for (let evil_y = 0; evil_y < 6; evil_y++) {
+                        for (let trashCount = 0; trashCount <= 3; trashCount++) {
+                            const state = {
+                                wallE: { x: wallE_x, y: wallE_y },
+                                evilRobot: { x: evil_x, y: evil_y },
+                                trashCount: trashCount
+                            };
+                            
+                            const stateStr = this.stateToString(state);
+                            const input = this.stateToTensor(state);
+                            const actionLogits = this.actorNetwork.forward(input);
+                            
+                            // Apply softmax to get probabilities - fix NaN issues
+                            let probabilities = [0.25, 0.25, 0.25, 0.25]; // Default uniform distribution
+                            
+                            try {
+                                if (!actionLogits.some(val => isNaN(val))) {
+                                    const maxLogit = Math.max(...actionLogits);
+                                    const expLogits = actionLogits.map(x => Math.exp((x - maxLogit) / this.temperature));
+                                    const sum = expLogits.reduce((a, b) => a + b, 0);
+                                    
+                                    if (sum > 0 && !isNaN(sum)) {
+                                        probabilities = expLogits.map(x => x / sum);
+                                        
+                                        // Final check for NaN
+                                        if (probabilities.some(p => isNaN(p))) {
+                                            probabilities = [0.25, 0.25, 0.25, 0.25];
+                                        }
+                                    }
+                                }
+                            } catch (error) {
+                                console.warn('Error calculating probabilities, using uniform distribution');
+                                probabilities = [0.25, 0.25, 0.25, 0.25];
+                            }
+                            
+                            // Find optimal action
+                            const maxProbIndex = probabilities.indexOf(Math.max(...probabilities));
+                            
+                            policyData.push({
+                                state: stateStr,
+                                wallE_x: wallE_x,
+                                wallE_y: wallE_y,
+                                evil_x: evil_x,
+                                evil_y: evil_y,
+                                trashCount: trashCount,
+                                optimalAction: maxProbIndex,
+                                optimalActionName: actionNames[maxProbIndex],
+                                actionProbUp: probabilities[0].toFixed(4),
+                                actionProbRight: probabilities[1].toFixed(4),
+                                actionProbDown: probabilities[2].toFixed(4),
+                                actionProbLeft: probabilities[3].toFixed(4),
+                                maxProbability: Math.max(...probabilities).toFixed(4)
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        
+        return policyData;
+    }
+
+    // Get Actor-Critic table statistics
+    getActorCriticStats() {
+        const totalStates = 6 * 6 * 6 * 6 * 4; // All possible state combinations
+        
+        // Sample some states to get value range
+        const sampleValues = [];
+        for (let i = 0; i < 100; i++) {
+            const state = {
+                wallE: { x: Math.floor(Math.random() * 6), y: Math.floor(Math.random() * 6) },
+                evilRobot: { x: Math.floor(Math.random() * 6), y: Math.floor(Math.random() * 6) },
+                trashCount: Math.floor(Math.random() * 4)
+            };
+            const input = this.stateToTensor(state);
+            const value = this.criticNetwork.forward(input)[0];
+            if (!isNaN(value)) {
+                sampleValues.push(value);
+            }
+        }
+        
+        return {
+            totalStates: totalStates,
+            networkArchitecture: 'Actor: [24,64,32,4], Critic: [24,64,32,1]',
+            temperature: this.temperature.toFixed(4),
+            minSampleValue: sampleValues.length > 0 ? Math.min(...sampleValues).toFixed(4) : '0',
+            maxSampleValue: sampleValues.length > 0 ? Math.max(...sampleValues).toFixed(4) : '0',
+            avgSampleValue: sampleValues.length > 0 ? (sampleValues.reduce((a, b) => a + b, 0) / sampleValues.length).toFixed(4) : '0'
+        };
     }
 }
 

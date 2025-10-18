@@ -155,6 +155,7 @@
                 <div>Average Reward: <span id="averageReward">0</span></div>
                 <div>Trash Remaining: <span id="trashCount">0</span></div>
                 <div style="color: #4CAF50; font-weight: bold;">🎉 Successful Completions: <span id="successfulCompletions">0</span></div>
+                <div style="color: #2E7D32; font-weight: bold; font-size: 14px;">📈 Success Rate: <span id="successRate">0.0%</span></div>
             </div>
         </div>
         <div class="controls">
@@ -188,8 +189,8 @@
 
             <div id="actor_critic_params" style="display: none;">
                 <label>Actor Learning Rate:</label>
-                <input type="range" id="actor_learning_rate" min="0.01" max="1" step="0.01" value="0.001">
-                <span id="actor_learning_rate_value">0.001</span>
+                <input type="range" id="actor_learning_rate" min="0.01" max="1" step="0.01" value="0.01">
+                <span id="actor_learning_rate_value">0.01</span>
 
                 <label>Critic Learning Rate:</label>
                 <input type="range" id="critic_learning_rate" min="0.01" max="1" step="0.01" value="0.01">
@@ -210,7 +211,10 @@
 
             <button id="startButton" style="margin-top: 20px; width: 100%;">Start Training</button>
             <button id="resetButton" style="margin-top: 10px; width: 100%;">Reset</button>
-            <button id="exportButton" style="margin-top: 10px; width: 100%; background: #2196F3; color: white; border: none; border-radius: 4px; padding: 10px; cursor: pointer;">Export CSV Report</button>
+            <button id="exportButton" style="margin-top: 10px; width: 100%; background: #2196F3; color: white; border: none; border-radius: 4px; padding: 10px; cursor: pointer;"> Export CSV Report</button>
+            <button id="exportQTableButton" style="margin-top: 10px; width: 100%; background: #9C27B0; color: white; border: none; border-radius: 4px; padding: 10px; cursor: pointer;"> Export Q-Table (Q-Learning)</button>
+            <button id="exportMonteCarloButton" style="margin-top: 10px; width: 100%; background: #FF5722; color: white; border: none; border-radius: 4px; padding: 10px; cursor: pointer;"> Export Return Tables (Monte Carlo)</button>
+            <button id="exportActorCriticButton" style="margin-top: 10px; width: 100%; background: #795548; color: white; border: none; border-radius: 4px; padding: 10px; cursor: pointer;"> Export Value/Policy Tables (Actor-Critic)</button>
         </div>
     </div>
     <div class="chart-container">
