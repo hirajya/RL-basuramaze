@@ -49,20 +49,21 @@ class Simulation {
                     label: 'Cumulative Performance',
                     data: [],
                     borderColor: 'rgb(46, 204, 113)',
-                    backgroundColor: 'rgba(46, 204, 113, 0.1)',
-                    tension: 0.3,
+                    backgroundColor: 'rgba(46, 204, 113, 0.2)',
+                    tension: 0.2,
                     fill: false,
-                    pointRadius: 1,
-                    pointHoverRadius: 4,
-                    borderWidth: 2,
-                    yAxisID: 'y1'
+                    pointRadius: 2,
+                    pointHoverRadius: 5,
+                    borderWidth: 3,
+                    yAxisID: 'y1',
+                    hidden: false // Ensure it's not hidden by default
                 }, {
                     label: 'Learning Progress (%)',
                     data: [],
                     borderColor: 'rgb(155, 89, 182)',
                     backgroundColor: 'rgba(155, 89, 182, 0.1)',
                     tension: 0.4,
-                    fill: '+1',
+                    fill: false,
                     pointRadius: 1,
                     pointHoverRadius: 4,
                     borderWidth: 2,
@@ -195,12 +196,8 @@ class Simulation {
             
             console.log(`📊 Learning Metrics: Curve=${learningCurve.toFixed(2)}, Cumulative=${cumulativeScore.toFixed(0)}, Progress=${learningProgress.toFixed(1)}%`);
 
-            // Keep reasonable history
-            const maxPoints = 200;
-            if (this.chart.data.labels.length > maxPoints) {
-                this.chart.data.labels.shift();
-                this.chart.data.datasets.forEach(dataset => dataset.data.shift());
-            }
+            // REMOVED: No data compression or truncation - keep all data
+            // Keep all episodes to show complete learning journey
 
             // Dynamic Y-axis scaling for main reward axis
             if (allRewards.length > 0) {
@@ -218,9 +215,25 @@ class Simulation {
                 this.chart.options.scales.y1.max = Math.max(...allCumulative) * 1.1;
             }
 
+            // FULL RANGE X-AXIS: Always show from episode 0 to latest episode
+            this.chart.options.scales.x.min = 0;
+            this.chart.options.scales.x.max = this.episodeCount + Math.max(5, Math.floor(this.episodeCount * 0.05));
+
+            // Adjust X-axis tick frequency based on total episodes for readability
+            const totalEpisodes = this.episodeCount;
+            if (totalEpisodes <= 50) {
+                this.chart.options.scales.x.ticks.stepSize = 5;
+            } else if (totalEpisodes <= 200) {
+                this.chart.options.scales.x.ticks.stepSize = 10;
+            } else if (totalEpisodes <= 500) {
+                this.chart.options.scales.x.ticks.stepSize = 25;
+            } else {
+                this.chart.options.scales.x.ticks.stepSize = 50;
+            }
+
             this.chart.update('none');
             
-            console.log(`📊 Learning curve updated: ${allRewards.length} episodes, Window size: ${windowSize}`);
+            console.log(`📊 Chart updated: ${allRewards.length} episodes, Full range: 0 to ${this.chart.options.scales.x.max}, Step size: ${this.chart.options.scales.x.ticks.stepSize}`);
             
         } catch (error) {
             console.error('❌ Learning curve update error:', error);
