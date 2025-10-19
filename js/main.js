@@ -417,11 +417,47 @@ class Simulation {
                 document.getElementById('averageReward').textContent = '0.0';
             }
 
+            // Update top episodes display
+            this.updateTopEpisodes();
+
             // Trigger a render to update heatmap
             this.env.render();
         } catch (error) {
             console.error('Error updating status panel:', error);
         }
+    }
+
+    // New method to track and display top episodes
+    updateTopEpisodes() {
+        if (this.episodeMetrics.length === 0) {
+            document.getElementById('topEpisodes').textContent = 'None';
+            return;
+        }
+
+        // Get top 3 episodes by reward
+        const topEpisodes = [...this.episodeMetrics]
+            .sort((a, b) => b.currentReward - a.currentReward)
+            .slice(0, 3);
+
+        // Format the display string
+        let displayText = '';
+        topEpisodes.forEach((episode, index) => {
+            if (index > 0) displayText += ', ';
+            displayText += `#${episode.episode} (${episode.currentReward.toFixed(1)})`;
+        });
+
+        // If there are ties (same reward), show them
+        const bestReward = topEpisodes[0].currentReward;
+        const tiedEpisodes = this.episodeMetrics.filter(ep => 
+            Math.abs(ep.currentReward - bestReward) < 0.001
+        );
+
+        if (tiedEpisodes.length > 1) {
+            const tiedNumbers = tiedEpisodes.map(ep => `#${ep.episode}`).join(', ');
+            displayText = `${tiedNumbers} (${bestReward.toFixed(1)}) [${tiedEpisodes.length} tied]`;
+        }
+
+        document.getElementById('topEpisodes').textContent = displayText;
     }
 
     // CSV Export functionality
