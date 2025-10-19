@@ -195,7 +195,7 @@ class ActorCriticAgent extends BaseAgent {
         }
 
         try {
-            console.log(`Actor-Critic episodeEnd: Processing ${this.states.length} states, ${this.rewards.length} rewards`);
+            console.log(`Actor-Critic episodeEnd: Processing ${this.states.length} states, ${this.rewards.length} rewards for episode ${this.currentEpisode}`);
             
             // Calculate returns and advantages
             const values = this.states.map(state => {
@@ -228,18 +228,29 @@ class ActorCriticAgent extends BaseAgent {
             // Update networks with the raw returns (not normalized)
             this.updateNetworks(this.states, this.actions, returns, clippedAdvantages);
 
-            // Track value updates for export
-            for (let t = 0; t < this.states.length; t++) {
-                this.updateHistory.push({
-                    episode: this.currentEpisode,
-                    step: t + 1,
-                    state: `Step_${t + 1}`,
-                    action: this.actions[t],
-                    stateValue: returns[t].toFixed(4),
-                    reward: this.rewards[t],
-                    timestamp: new Date().toISOString(),
-                    episodeReset: 'FALSE'
-                });
+            // IMPORTANT: Update the existing updateHistory entries with calculated returns
+            // Find entries for this episode that are not reset markers
+            const currentEpisodeEntries = this.updateHistory.filter(entry => 
+                entry.episode === this.currentEpisode && entry.episodeReset === 'FALSE'
+            );
+            
+            console.log(`Found ${currentEpisodeEntries.length} existing entries for episode ${this.currentEpisode}, need to update ${returns.length} entries`);
+            
+            if (currentEpisodeEntries.length === returns.length) {
+                // Update existing entries with calculated state values
+                for (let i = 0; i < currentEpisodeEntries.length; i++) {
+                    currentEpisodeEntries[i].stateValue = returns[i].toFixed(4);
+                }
+                console.log(`Updated ${currentEpisodeEntries.length} entries with calculated returns for episode ${this.currentEpisode}`);
+            } else {
+                console.warn(`Mismatch: ${currentEpisodeEntries.length} stored entries vs ${returns.length} calculated returns for episode ${this.currentEpisode}`);
+                
+                // If there's a mismatch, don't add duplicate entries - just update what we can
+                const minLength = Math.min(currentEpisodeEntries.length, returns.length);
+                for (let i = 0; i < minLength; i++) {
+                    currentEpisodeEntries[i].stateValue = returns[i].toFixed(4);
+                }
+                console.log(`Updated ${minLength} entries (partial) for episode ${this.currentEpisode}`);
             }
 
             // Update state value bounds
@@ -251,12 +262,13 @@ class ActorCriticAgent extends BaseAgent {
             const totalReward = this.rewards.reduce((a, b) => a + b, 0);
             this.addReward(totalReward);
 
-            console.log(`Episode ${this.episodeCount} complete. Total reward: ${totalReward.toFixed(2)}, Avg return: ${(returns.reduce((a,b) => a+b, 0) / returns.length).toFixed(4)}`);
+            console.log(`Episode ${this.currentEpisode} complete. Total reward: ${totalReward.toFixed(2)}, Avg return: ${(returns.reduce((a,b) => a+b, 0) / returns.length).toFixed(4)}`);
 
-            // Clear episode data
+            // Clear episode data for next episode
             this.states = [];
             this.actions = [];
             this.rewards = [];
+            
         } catch (error) {
             console.error('Error in episodeEnd:', error);
             // Reset episode data on error

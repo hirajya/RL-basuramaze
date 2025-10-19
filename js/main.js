@@ -855,20 +855,52 @@ class Simulation {
 
     // Monte Carlo episode-specific export
     exportMonteCarloEpisodeData(episodeNumber) {
-        if (!this.agent.returnHistory) return [];
+        if (!this.agent.returnHistory) {
+            console.log('No returnHistory found');
+            return [];
+        }
         
-        return this.agent.returnHistory.filter(entry => {
-            return entry.episode === episodeNumber && !entry.episodeReset;
+        console.log(`Looking for Monte Carlo episode ${episodeNumber}`);
+        console.log(`Total returnHistory entries: ${this.agent.returnHistory.length}`);
+        
+        // Get all entries from the specified episode (including reset markers and regular data)
+        const episodeData = this.agent.returnHistory.filter(entry => {
+            return entry.episode === episodeNumber && entry.episodeReset === 'FALSE';
         });
+        
+        console.log(`Found ${episodeData.length} Monte Carlo entries for episode ${episodeNumber}`);
+        
+        // Debug: Show first few entries
+        if (episodeData.length > 0) {
+            console.log('Sample entries:', episodeData.slice(0, 3));
+        }
+        
+        return episodeData;
     }
 
     // Actor-Critic episode-specific export
     exportActorCriticEpisodeData(episodeNumber) {
-        if (!this.agent.updateHistory) return [];
+        if (!this.agent.updateHistory) {
+            console.log('No updateHistory found');
+            return [];
+        }
         
-        return this.agent.updateHistory.filter(entry => {
-            return entry.episode === episodeNumber && !entry.episodeReset;
+        console.log(`Looking for Actor-Critic episode ${episodeNumber}`);
+        console.log(`Total updateHistory entries: ${this.agent.updateHistory.length}`);
+        
+        // Get all entries from the specified episode (including reset markers and regular data)
+        const episodeData = this.agent.updateHistory.filter(entry => {
+            return entry.episode === episodeNumber && entry.episodeReset === 'FALSE';
         });
+        
+        console.log(`Found ${episodeData.length} Actor-Critic entries for episode ${episodeNumber}`);
+        
+        // Debug: Show first few entries
+        if (episodeData.length > 0) {
+            console.log('Sample entries:', episodeData.slice(0, 3));
+        }
+        
+        return episodeData;
     }
 
     // Create CSV content for Q-Learning episode data
