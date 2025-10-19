@@ -99,6 +99,8 @@ class MonteCarloAgent extends BaseAgent {
         }
 
         try {
+            console.log(`Monte Carlo episodeEnd: Processing ${this.episodeStates.length} states, ${this.episodeRewards.length} rewards for episode ${this.currentEpisode}`);
+            
             // Calculate returns for each step
             let G = 0;
             const returns = [];
@@ -109,7 +111,9 @@ class MonteCarloAgent extends BaseAgent {
                 returns.unshift(G);
             }
 
-            // Update Q-values and track for export
+            console.log(`Returns range: ${Math.min(...returns).toFixed(4)} to ${Math.max(...returns).toFixed(4)}`);
+
+            // Update Q-values using the calculated returns
             for (let t = 0; t < this.episodeStates.length; t++) {
                 const stateStr = this.episodeStates[t];
                 const action = this.episodeActions[t];
@@ -122,18 +126,31 @@ class MonteCarloAgent extends BaseAgent {
                 // Update Q-value using incremental mean with learning rate
                 const oldQ = this.qTable[stateStr][action];
                 this.qTable[stateStr][action] = oldQ + this.learningRate * (returns[t] - oldQ);
+            }
+
+            // IMPORTANT: Update the existing returnHistory entries with calculated returns
+            // Find entries for this episode that are not reset markers
+            const currentEpisodeEntries = this.returnHistory.filter(entry => 
+                entry.episode === this.currentEpisode && entry.episodeReset === 'FALSE'
+            );
+            
+            console.log(`Found ${currentEpisodeEntries.length} existing entries for episode ${this.currentEpisode}, need to update ${returns.length} entries`);
+            
+            if (currentEpisodeEntries.length === returns.length) {
+                // Update existing entries with calculated return values
+                for (let i = 0; i < currentEpisodeEntries.length; i++) {
+                    currentEpisodeEntries[i].returnValue = returns[i].toFixed(4);
+                }
+                console.log(`Updated ${currentEpisodeEntries.length} entries with calculated returns for episode ${this.currentEpisode}`);
+            } else {
+                console.warn(`Mismatch: ${currentEpisodeEntries.length} stored entries vs ${returns.length} calculated returns for episode ${this.currentEpisode}`);
                 
-                // Track this return update for export
-                this.returnHistory.push({
-                    episode: this.currentEpisode,
-                    step: t + 1,
-                    state: stateStr,
-                    action: action,
-                    returnValue: returns[t].toFixed(4),
-                    reward: this.episodeRewards[t],
-                    timestamp: new Date().toISOString(),
-                    episodeReset: 'FALSE'  // Normal update, not a reset
-                });
+                // If there's a mismatch, don't add duplicate entries - just update what we can
+                const minLength = Math.min(currentEpisodeEntries.length, returns.length);
+                for (let i = 0; i < minLength; i++) {
+                    currentEpisodeEntries[i].returnValue = returns[i].toFixed(4);
+                }
+                console.log(`Updated ${minLength} entries (partial) for episode ${this.currentEpisode}`);
             }
 
             // Store total episode reward
@@ -142,8 +159,9 @@ class MonteCarloAgent extends BaseAgent {
             
             // Log episode stats
             this.episodeCount++;
+            console.log(`Episode ${this.currentEpisode} complete. Total reward: ${totalReward.toFixed(2)}, Avg return: ${(returns.reduce((a,b) => a+b, 0) / returns.length).toFixed(4)}`);
 
-            // Clear episode memory
+            // Clear episode memory for next episode
             this.episodeStates = [];
             this.episodeActions = [];
             this.episodeRewards = [];
