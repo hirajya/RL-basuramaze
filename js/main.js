@@ -16,6 +16,14 @@ class Simulation {
         this.currentEpisodeSteps = 0;
         this.episodeStartTime = null;
         
+        // Add step metrics tracking for simulation key findings
+        this.stepMetrics = {
+            successfulEpisodes: [],  // Track steps for successful episodes only
+            allEpisodes: [],         // Track steps for all episodes
+            fastestSuccess: Infinity,
+            longestAttempt: 0
+        };
+        
         this.initEventListeners();
     }
 
@@ -183,9 +191,25 @@ class Simulation {
             const learningCurve = recentRewards.reduce((sum, r) => sum + r, 0) / recentRewards.length;
             this.chart.data.datasets[1].data.push(learningCurve);
             
-            // Calculate cumulative performance score
+            // Calculate cumulative performance score - SUM OF POSITIVE REWARDS
             const cumulativeScore = allRewards.reduce((sum, r) => sum + Math.max(0, r), 0);
             this.chart.data.datasets[2].data.push(cumulativeScore);
+            
+            // DEBUGGING: Log detailed cumulative calculation
+            const positiveRewards = allRewards.filter(r => r > 0);
+            const negativeRewards = allRewards.filter(r => r <= 0);
+            const previousCumulative = this.chart.data.datasets[2].data.length > 1 ? 
+                this.chart.data.datasets[2].data[this.chart.data.datasets[2].data.length - 2] : 0;
+            const rewardContribution = Math.max(0, reward);
+            
+            console.log(`🔍 CUMULATIVE DEBUG: Episode ${this.episodeCount}`);
+            console.log(`   Current Reward: ${reward}`);
+            console.log(`   Reward Contribution: ${rewardContribution} (${reward > 0 ? 'ADDED' : 'IGNORED'})`);
+            console.log(`   Previous Cumulative: ${previousCumulative.toFixed(2)}`);
+            console.log(`   New Cumulative: ${cumulativeScore.toFixed(2)}`);
+            console.log(`   Change: +${(cumulativeScore - previousCumulative).toFixed(2)}`);
+            console.log(`   Total Positive Episodes: ${positiveRewards.length}/${allRewards.length}`);
+            console.log(`   ${reward > 0 ? '✅ Success accumulation!' : '❌ No contribution'}`);
             
             // Calculate learning progress percentage
             const maxPossibleReward = 180; // Theoretical maximum
@@ -1263,6 +1287,9 @@ class Simulation {
             
             this.episodeMetrics.push(episodeMetric);
 
+            // NEW: Update step metrics tracking for simulation key findings
+            this.updateStepMetrics(isSuccessful);
+
             // Show episode transition notification on screen
             this.showEpisodeNotification(this.episodeCount, isSuccessful, this.totalReward);
 
@@ -1332,6 +1359,75 @@ class Simulation {
         setTimeout(() => {
             notification.style.opacity = '0';
         }, 2000);
+    }
+
+    // NEW METHOD: Update step metrics for simulation key findings
+    updateStepMetrics(isSuccessful) {
+        try {
+            const metrics = this.stepMetrics;
+            
+            // Add current episode steps to all episodes
+            metrics.allEpisodes.push(this.currentEpisodeSteps);
+            
+            // Track longest attempt
+            metrics.longestAttempt = Math.max(metrics.longestAttempt, this.currentEpisodeSteps);
+            
+            // If episode was successful, track it separately
+            if (isSuccessful) {
+                metrics.successfulEpisodes.push(this.currentEpisodeSteps);
+                metrics.fastestSuccess = Math.min(metrics.fastestSuccess, this.currentEpisodeSteps);
+            }
+            
+            // Update the display
+            this.updateStepFindings();
+            
+            console.log(`📊 Step Metrics Updated: Steps=${this.currentEpisodeSteps}, Success=${isSuccessful}, Total Successful=${metrics.successfulEpisodes.length}`);
+            
+        } catch (error) {
+            console.error('Error updating step metrics:', error);
+        }
+    }
+
+    // NEW METHOD: Update the simulation key findings display
+    updateStepFindings() {
+        try {
+            const metrics = this.stepMetrics;
+            
+            // Average steps to finish (successful episodes only)
+            if (metrics.successfulEpisodes.length > 0) {
+                const avgSteps = metrics.successfulEpisodes.reduce((sum, steps) => sum + steps, 0) / metrics.successfulEpisodes.length;
+                document.getElementById('avgStepsToFinish').textContent = avgSteps.toFixed(1);
+            } else {
+                document.getElementById('avgStepsToFinish').textContent = 'N/A';
+            }
+            
+            // Fastest completion
+            if (metrics.fastestSuccess !== Infinity) {
+                document.getElementById('fastestCompletion').textContent = metrics.fastestSuccess;
+            } else {
+                document.getElementById('fastestCompletion').textContent = 'N/A';
+            }
+            
+            // Longest attempt
+            if (metrics.longestAttempt > 0) {
+                document.getElementById('longestAttempt').textContent = metrics.longestAttempt;
+            } else {
+                document.getElementById('longestAttempt').textContent = 'N/A';
+            }
+            
+            // Most common completion range (for successful episodes)
+            if (metrics.successfulEpisodes.length > 3) {
+                const sortedSteps = [...metrics.successfulEpisodes].sort((a, b) => a - b);
+                const q1 = sortedSteps[Math.floor(sortedSteps.length * 0.25)];
+                const q3 = sortedSteps[Math.floor(sortedSteps.length * 0.75)];
+                document.getElementById('commonRange').textContent = `${Math.floor(q1)}–${Math.ceil(q3)}`;
+            } else {
+                document.getElementById('commonRange').textContent = 'N/A';
+            }
+            
+        } catch (error) {
+            console.error('Error updating step findings display:', error);
+        }
     }
 }
 
