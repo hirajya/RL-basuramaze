@@ -393,25 +393,20 @@ class Simulation {
                 (this.env.successfulCompletions / this.episodeCount * 100) : 0;
             document.getElementById('successRate').textContent = successRate.toFixed(1) + '%';
 
-            // Update best and average rewards - fix NaN issue
-            const allRewards = this.chart.data.datasets[0].data;
-            if (allRewards.length > 0) {
-                // Extract reward values from chart data (handle both number and {x,y} object formats)
-                const rewardValues = allRewards.map(item => 
-                    typeof item === 'object' ? item.y : item
-                ).filter(val => !isNaN(val) && val !== undefined);
+            // FIX: Use episodeMetrics as the single source of truth for all metrics
+            if (this.episodeMetrics.length > 0) {
+                // Get all rewards from episodeMetrics (consistent source)
+                const allRewards = this.episodeMetrics.map(m => m.currentReward);
                 
-                if (rewardValues.length > 0) {
-                    const bestReward = Math.max(...rewardValues);
-                    const recentRewards = rewardValues.slice(-10);
-                    const avgReward = recentRewards.reduce((a, b) => a + b, 0) / recentRewards.length;
-                    
-                    document.getElementById('bestReward').textContent = bestReward.toFixed(1);
-                    document.getElementById('averageReward').textContent = avgReward.toFixed(1);
-                } else {
-                    document.getElementById('bestReward').textContent = '0.0';
-                    document.getElementById('averageReward').textContent = '0.0';
-                }
+                // Best reward from all episodes
+                const bestReward = Math.max(...allRewards);
+                
+                // Average reward from last 10 episodes
+                const recentRewards = allRewards.slice(-10);
+                const avgReward = recentRewards.reduce((a, b) => a + b, 0) / recentRewards.length;
+                
+                document.getElementById('bestReward').textContent = bestReward.toFixed(1);
+                document.getElementById('averageReward').textContent = avgReward.toFixed(1);
             } else {
                 document.getElementById('bestReward').textContent = '0.0';
                 document.getElementById('averageReward').textContent = '0.0';
@@ -439,22 +434,32 @@ class Simulation {
             .sort((a, b) => b.currentReward - a.currentReward)
             .slice(0, 3);
 
-        // Format the display string
+        // Create more compact display format
         let displayText = '';
-        topEpisodes.forEach((episode, index) => {
-            if (index > 0) displayText += ', ';
-            displayText += `#${episode.episode} (${episode.currentReward.toFixed(1)})`;
-        });
-
-        // If there are ties (same reward), show them
+        
+        // Check for ties at the top reward level
         const bestReward = topEpisodes[0].currentReward;
         const tiedEpisodes = this.episodeMetrics.filter(ep => 
             Math.abs(ep.currentReward - bestReward) < 0.001
         );
 
         if (tiedEpisodes.length > 1) {
-            const tiedNumbers = tiedEpisodes.map(ep => `#${ep.episode}`).join(', ');
-            displayText = `${tiedNumbers} (${bestReward.toFixed(1)}) [${tiedEpisodes.length} tied]`;
+            // Show ties more compactly
+            const tiedNumbers = tiedEpisodes.slice(0, 3).map(ep => `#${ep.episode}`);
+            if (tiedEpisodes.length > 3) {
+                displayText = `${tiedNumbers.join(',')}+${tiedEpisodes.length-3} more (${bestReward.toFixed(1)})`;
+            } else {
+                displayText = `${tiedNumbers.join(',')} (${bestReward.toFixed(1)})`;
+            }
+        } else {
+            // Show top episodes more compactly
+            const compactList = topEpisodes.map(ep => `#${ep.episode}(${ep.currentReward.toFixed(1)})`);
+            displayText = compactList.join(', ');
+            
+            // Truncate if too long
+            if (displayText.length > 40) {
+                displayText = `#${topEpisodes[0].episode}(${topEpisodes[0].currentReward.toFixed(1)}), #${topEpisodes[1].episode}(${topEpisodes[1].currentReward.toFixed(1)})...`;
+            }
         }
 
         document.getElementById('topEpisodes').textContent = displayText;
