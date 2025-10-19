@@ -265,17 +265,15 @@ class Environment {
         
         // Hit wall (didn't move)
         if (prevPos.x === this.wallE.x && prevPos.y === this.wallE.y) {
+            console.log('🚫 Wall hit - penalty: -1');
             return -1;
         }
 
-        // Calculate how many trash pieces were collected
-        const initialTrash = this.getTotalTrash();
-        const collectedTrash = initialTrash - this.trashCount;
-        
         // Collect trash
         if (currentCell === this.TRASH) {
             this.grid[this.wallE.y][this.wallE.x] = this.EMPTY;
             this.trashCount--;
+            console.log(`🗑️ Trash collected! Reward: +10, Remaining trash: ${this.trashCount}`);
             return 10.0;  // Base reward for collecting trash
         }
 
@@ -283,6 +281,7 @@ class Environment {
         if (currentCell === this.MINE) {
             // Remove the mine from the grid to prevent double interaction
             this.grid[this.wallE.y][this.wallE.x] = this.EMPTY;
+            console.log('💥 Mine hit! Penalty: -20 (episode ends)');
             return -20;  // Heavy penalty for hitting mine
         }
 
@@ -291,17 +290,19 @@ class Environment {
             if (this.trashCount === 0) {
                 // SUCCESS! All trash collected before reaching exit
                 this.successfulCompletions++;
-                console.log(`🎉 Successful completion #${this.successfulCompletions}! All trash collected!`);
-                
-                // All trash collected: multiply reward by total collected trash
                 const multiplier = this.totalInitialTrash;  // Total trash that was in the level
-                return 50.0 * multiplier;  // Base exit reward * number of trash collected
+                const reward = 50.0 * multiplier;  // Base exit reward * number of trash collected
+                console.log(`🎉 SUCCESS! All trash collected! Reward: +${reward} (${this.successfulCompletions} total successes)`);
+                return reward;
             } else {
+                console.log(`❌ Exit reached but ${this.trashCount} trash remaining. Penalty: -10`);
                 return -10;  // Penalty for reaching exit without all trash
             }
         }
 
         // Small negative reward for each step to encourage efficiency
+        // But make this much smaller so it doesn't dominate
+        console.log('👟 Step taken - small penalty: -0.1');
         return -0.1;
     }
 

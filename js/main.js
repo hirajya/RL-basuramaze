@@ -28,21 +28,45 @@ class Simulation {
                 datasets: [{
                     label: 'Episode Reward',
                     data: [],
-                    borderColor: 'rgb(75, 192, 192)',
-                    backgroundColor: 'rgba(75, 192, 192, 0.1)',
-                    tension: 0.1,
-                    fill: false,
-                    pointRadius: 2,
-                    pointHoverRadius: 4
-                }, {
-                    label: 'Average Reward (last 10)',
-                    data: [],
-                    borderColor: 'rgb(255, 99, 132)',
-                    backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                    borderColor: 'rgba(52, 152, 219, 0.6)',
+                    backgroundColor: 'rgba(52, 152, 219, 0.1)',
                     tension: 0.1,
                     fill: false,
                     pointRadius: 1,
-                    pointHoverRadius: 3
+                    pointHoverRadius: 4,
+                    borderWidth: 1
+                }, {
+                    label: 'Learning Curve (Average)',
+                    data: [],
+                    borderColor: 'rgb(231, 76, 60)',
+                    backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                    tension: 0.3,
+                    fill: false,
+                    pointRadius: 2,
+                    pointHoverRadius: 4,
+                    borderWidth: 3
+                }, {
+                    label: 'Cumulative Performance',
+                    data: [],
+                    borderColor: 'rgb(46, 204, 113)',
+                    backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                    tension: 0.3,
+                    fill: false,
+                    pointRadius: 1,
+                    pointHoverRadius: 4,
+                    borderWidth: 2,
+                    yAxisID: 'y1'
+                }, {
+                    label: 'Learning Progress (%)',
+                    data: [],
+                    borderColor: 'rgb(155, 89, 182)',
+                    backgroundColor: 'rgba(155, 89, 182, 0.1)',
+                    tension: 0.4,
+                    fill: '+1',
+                    pointRadius: 1,
+                    pointHoverRadius: 4,
+                    borderWidth: 2,
+                    yAxisID: 'y2'
                 }]
             },
             options: {
@@ -55,46 +79,87 @@ class Simulation {
                 },
                 scales: {
                     y: {
+                        type: 'linear',
+                        position: 'left',
                         beginAtZero: false,
-                        ticks: {
-                            maxTicksLimit: 8
+                        title: {
+                            display: true,
+                            text: 'Reward',
+                            font: { size: 12, weight: 'bold' }
                         },
-                        grid: {
-                            color: 'rgba(0,0,0,0.1)'
-                        }
+                        ticks: {
+                            maxTicksLimit: 8,
+                            callback: function(value) { return value.toFixed(0); }
+                        },
+                        grid: { color: 'rgba(0,0,0,0.1)' }
+                    },
+                    y1: {
+                        type: 'linear',
+                        position: 'right',
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Cumulative Score',
+                            font: { size: 12, weight: 'bold' }
+                        },
+                        ticks: {
+                            maxTicksLimit: 6,
+                            callback: function(value) { return value.toFixed(0); }
+                        },
+                        grid: { display: false }
+                    },
+                    y2: {
+                        type: 'linear',
+                        position: 'right',
+                        min: 0,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'Learning %',
+                            font: { size: 12, weight: 'bold' }
+                        },
+                        ticks: {
+                            maxTicksLimit: 5,
+                            callback: function(value) { return value.toFixed(0) + '%'; }
+                        },
+                        grid: { display: false }
                     },
                     x: {
                         type: 'linear',
                         position: 'bottom',
-                        ticks: {
-                            maxTicksLimit: 10,
-                            callback: function(value) {
-                                return Math.floor(value);
-                            }
+                        title: {
+                            display: true,
+                            text: 'Episode',
+                            font: { size: 12, weight: 'bold' }
                         },
-                        grid: {
-                            color: 'rgba(0,0,0,0.1)'
-                        }
+                        ticks: {
+                            maxTicksLimit: 12,
+                            stepSize: 1,
+                            callback: function(value) { return Math.floor(value); }
+                        },
+                        grid: { color: 'rgba(0,0,0,0.1)' }
                     }
                 },
                 plugins: {
                     legend: {
                         display: true,
-                        position: 'top'
+                        position: 'top',
+                        labels: { usePointStyle: true, font: { size: 11 }, padding: 15 }
                     },
-                    zoom: {
-                        zoom: {
-                            wheel: {
-                                enabled: true,
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            title: function(context) {
+                                return `Episode ${context[0].parsed.x}`;
                             },
-                            pinch: {
-                                enabled: true
-                            },
-                            mode: 'x',
-                        },
-                        pan: {
-                            enabled: true,
-                            mode: 'x',
+                            label: function(context) {
+                                const value = context.parsed.y.toFixed(2);
+                                if (context.datasetIndex === 3) {
+                                    return `${context.dataset.label}: ${value}%`;
+                                }
+                                return `${context.dataset.label}: ${value}`;
+                            }
                         }
                     }
                 }
@@ -104,62 +169,61 @@ class Simulation {
 
     updateChart(reward) {
         try {
-            // Add new reward data
-            this.chart.data.labels.push(this.episodeCount);
-            this.chart.data.datasets[0].data.push({x: this.episodeCount, y: reward});
-
-            // Calculate and update moving average
-            const recentRewards = this.chart.data.datasets[0].data.slice(-10);
-            const avgReward = recentRewards.reduce((a, b) => a + (b.y || b), 0) / recentRewards.length;
-            this.chart.data.datasets[1].data.push({x: this.episodeCount, y: avgReward});
-
-            // Dynamic compression based on episode count
-            const maxVisiblePoints = 100; // Maximum points to show at full detail
+            console.log(`📊 LEARNING CURVE UPDATE: Episode ${this.episodeCount}, Reward: ${reward}`);
             
-            if (this.chart.data.datasets[0].data.length > maxVisiblePoints) {
-                // Compress older data by keeping every Nth point
-                const compressionRatio = Math.ceil(this.chart.data.datasets[0].data.length / maxVisiblePoints);
-                
-                // Keep recent episodes at full resolution, compress older ones
-                const recentPoints = 50; // Keep last 50 episodes at full resolution
-                const fullResolutionData = this.chart.data.datasets[0].data.slice(-recentPoints);
-                const fullResolutionAvg = this.chart.data.datasets[1].data.slice(-recentPoints);
-                
-                // Compress older data
-                const olderData = this.chart.data.datasets[0].data.slice(0, -recentPoints);
-                const olderAvgData = this.chart.data.datasets[1].data.slice(0, -recentPoints);
-                
-                const compressedData = [];
-                const compressedAvgData = [];
-                
-                for (let i = 0; i < olderData.length; i += compressionRatio) {
-                    if (olderData[i]) {
-                        compressedData.push(olderData[i]);
-                    }
-                    if (olderAvgData[i]) {
-                        compressedAvgData.push(olderAvgData[i]);
-                    }
-                }
-                
-                // Combine compressed older data with full resolution recent data
-                this.chart.data.datasets[0].data = [...compressedData, ...fullResolutionData];
-                this.chart.data.datasets[1].data = [...compressedAvgData, ...fullResolutionAvg];
-                
-                // Update labels to match
-                this.chart.data.labels = this.chart.data.datasets[0].data.map(point => point.x);
+            // Add episode reward
+            this.chart.data.labels.push(this.episodeCount);
+            this.chart.data.datasets[0].data.push(reward);
+
+            // Calculate adaptive moving average (learning curve)
+            const allRewards = this.chart.data.datasets[0].data;
+            const windowSize = Math.min(20, Math.max(5, Math.floor(allRewards.length / 10)));
+            const recentRewards = allRewards.slice(-windowSize);
+            const learningCurve = recentRewards.reduce((sum, r) => sum + r, 0) / recentRewards.length;
+            this.chart.data.datasets[1].data.push(learningCurve);
+            
+            // Calculate cumulative performance score
+            const cumulativeScore = allRewards.reduce((sum, r) => sum + Math.max(0, r), 0);
+            this.chart.data.datasets[2].data.push(cumulativeScore);
+            
+            // Calculate learning progress percentage
+            const maxPossibleReward = 180; // Theoretical maximum
+            const minExpectedReward = -50;  // Worst case scenario
+            const normalizedReward = Math.max(0, (learningCurve - minExpectedReward) / (maxPossibleReward - minExpectedReward));
+            const learningProgress = Math.min(100, normalizedReward * 100);
+            this.chart.data.datasets[3].data.push(learningProgress);
+            
+            console.log(`📊 Learning Metrics: Curve=${learningCurve.toFixed(2)}, Cumulative=${cumulativeScore.toFixed(0)}, Progress=${learningProgress.toFixed(1)}%`);
+
+            // Keep reasonable history
+            const maxPoints = 200;
+            if (this.chart.data.labels.length > maxPoints) {
+                this.chart.data.labels.shift();
+                this.chart.data.datasets.forEach(dataset => dataset.data.shift());
             }
 
-            // Update chart options for better scaling
-            this.chart.options.scales.x.min = Math.max(1, Math.min(...this.chart.data.labels) - 5);
-            this.chart.options.scales.x.max = Math.max(...this.chart.data.labels) + 5;
-            
-            // Set appropriate tick intervals based on data range
-            const dataRange = this.chart.options.scales.x.max - this.chart.options.scales.x.min;
-            this.chart.options.scales.x.ticks.stepSize = Math.max(1, Math.floor(dataRange / 10));
+            // Dynamic Y-axis scaling for main reward axis
+            if (allRewards.length > 0) {
+                const minReward = Math.min(...allRewards);
+                const maxReward = Math.max(...allRewards);
+                const padding = Math.max(10, (maxReward - minReward) * 0.15);
+                
+                this.chart.options.scales.y.min = minReward - padding;
+                this.chart.options.scales.y.max = maxReward + padding;
+            }
 
-            this.chart.update('none'); // Update without animation for better performance
+            // Update cumulative axis
+            const allCumulative = this.chart.data.datasets[2].data;
+            if (allCumulative.length > 0) {
+                this.chart.options.scales.y1.max = Math.max(...allCumulative) * 1.1;
+            }
+
+            this.chart.update('none');
+            
+            console.log(`📊 Learning curve updated: ${allRewards.length} episodes, Window size: ${windowSize}`);
+            
         } catch (error) {
-            console.error('Error updating chart:', error);
+            console.error('❌ Learning curve update error:', error);
         }
     }
 
@@ -1130,6 +1194,19 @@ class Simulation {
             console.log(`💰 Total Reward: ${this.totalReward.toFixed(2)}`);
             console.log(`🗑️ Trash Collected: ${initialTrashCount - this.env.trashCount}/${initialTrashCount}`);
             console.log(`${isSuccessful ? '✅ SUCCESS!' : '❌ Failed'} | Overall Success Rate: ${((this.env.successfulCompletions / this.episodeCount) * 100).toFixed(1)}%`);
+            
+            // ADD DETAILED EPISODE ANALYSIS
+            if (this.totalReward === -0.1) {
+                console.log(`🚨 FLAT LINE DETECTED! Episode ${this.episodeCount} only got step penalties (-0.1)`);
+                console.log(`🔍 This usually means:`);
+                console.log(`   • Agent hit max steps (${this.env.maxSteps}) without finding rewards`);
+                console.log(`   • Agent got stuck in walls or poor exploration`);
+                console.log(`   • Learning rate or epsilon may need adjustment`);
+            } else if (this.totalReward < -5) {
+                console.log(`💥 Episode ${this.episodeCount} had major penalties (mine/robot collision)`);
+            } else if (this.totalReward > 50) {
+                console.log(`🎯 Episode ${this.episodeCount} achieved high rewards! Agent is learning!`);
+            }
             
             // ADD VISUAL EPISODE END INDICATOR
             const rewardElement = document.getElementById('currentReward');
