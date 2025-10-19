@@ -72,6 +72,8 @@ class QLearningAgent extends BaseAgent {
 
             // Track this update for export with Episode_Reset flag
             this.tableHistory.push({
+                episode: this.currentEpisode,  // Add episode number
+                step: this.stepCount,
                 state: stateStr,
                 wallEX: state.wallE.x,
                 wallEY: state.wallE.y,
@@ -82,7 +84,8 @@ class QLearningAgent extends BaseAgent {
                 actionName: this.getActionName(action),
                 qValue: newQ,
                 isOptimal: this.qTable[stateStr][action] === Math.max(...this.qTable[stateStr]),
-                episodeReset: this.isEpisodeStart || false
+                episodeReset: this.isEpisodeStart || false,
+                timestamp: new Date().toISOString()
             });
 
             // Clear episode start flag after first update

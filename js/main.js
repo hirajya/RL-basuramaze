@@ -200,6 +200,12 @@ class Simulation {
             this.exportActorCriticTables();
         });
         
+        // Add episode-specific export button event listener
+        document.getElementById('exportSpecificEpisodeButton').addEventListener('click', () => {
+            console.log('Exporting specific episode data...');
+            this.exportSpecificEpisodeData();
+        });
+        
         document.getElementById('algorithm').addEventListener('change', (e) => {
             console.log('Switching to algorithm:', e.target.value);
             if (this.agent) {
@@ -764,6 +770,192 @@ class Simulation {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    }
+
+    // Episode-Specific Export functionality for all algorithms
+    exportSpecificEpisodeData() {
+        const episodeNumber = parseInt(document.getElementById('specificEpisodeNumber').value);
+        const algorithm = document.getElementById('algorithm').value;
+        
+        // Validate episode number
+        if (!episodeNumber || episodeNumber < 1) {
+            alert('Please enter a valid episode number (1 or greater).');
+            return;
+        }
+        
+        if (!this.agent) {
+            alert('No agent available. Please run some training episodes first.');
+            return;
+        }
+
+        console.log(`Exporting data for episode ${episodeNumber} (${algorithm})`);
+
+        try {
+            let exportData = [];
+            let filename = '';
+            let csvContent = '';
+            
+            switch (algorithm) {
+                case 'q_learning':
+                    exportData = this.exportQLearningEpisodeData(episodeNumber);
+                    if (exportData.length === 0) {
+                        alert(`No Q-Learning data found for episode ${episodeNumber}. Make sure the episode exists and has been completed.`);
+                        return;
+                    }
+                    filename = `Q_Learning_Episode_${episodeNumber}_${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.csv`;
+                    csvContent = this.createQLearningEpisodeCSV(exportData, episodeNumber);
+                    break;
+                    
+                case 'monte_carlo':
+                    exportData = this.exportMonteCarloEpisodeData(episodeNumber);
+                    if (exportData.length === 0) {
+                        alert(`No Monte Carlo data found for episode ${episodeNumber}. Make sure the episode exists and has been completed.`);
+                        return;
+                    }
+                    filename = `Monte_Carlo_Episode_${episodeNumber}_${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.csv`;
+                    csvContent = this.createMonteCarloEpisodeCSV(exportData, episodeNumber);
+                    break;
+                    
+                case 'actor_critic':
+                    exportData = this.exportActorCriticEpisodeData(episodeNumber);
+                    if (exportData.length === 0) {
+                        alert(`No Actor-Critic data found for episode ${episodeNumber}. Make sure the episode exists and has been completed.`);
+                        return;
+                    }
+                    filename = `Actor_Critic_Episode_${episodeNumber}_${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.csv`;
+                    csvContent = this.createActorCriticEpisodeCSV(exportData, episodeNumber);
+                    break;
+                    
+                default:
+                    alert('Unknown algorithm selected.');
+                    return;
+            }
+            
+            // Download the CSV file
+            this.downloadCSV(csvContent, filename);
+            
+            console.log(`Successfully exported episode ${episodeNumber} data for ${algorithm}`);
+            alert(`🎯 EPISODE ${episodeNumber} DATA EXPORTED! 🎯\n\nAlgorithm: ${algorithm.toUpperCase()}\nData entries: ${exportData.length}\nFilename: ${filename}`);
+            
+        } catch (error) {
+            console.error('Error exporting specific episode data:', error);
+            alert('Error exporting episode data. Please check the console for details.');
+        }
+    }
+
+    // Q-Learning episode-specific export
+    exportQLearningEpisodeData(episodeNumber) {
+        if (!this.agent.tableHistory) return [];
+        
+        // Get all entries from the specified episode (not just reset markers)
+        return this.agent.tableHistory.filter(entry => {
+            return entry.episode === episodeNumber;
+        });
+    }
+
+    // Monte Carlo episode-specific export
+    exportMonteCarloEpisodeData(episodeNumber) {
+        if (!this.agent.returnHistory) return [];
+        
+        return this.agent.returnHistory.filter(entry => {
+            return entry.episode === episodeNumber && !entry.episodeReset;
+        });
+    }
+
+    // Actor-Critic episode-specific export
+    exportActorCriticEpisodeData(episodeNumber) {
+        if (!this.agent.updateHistory) return [];
+        
+        return this.agent.updateHistory.filter(entry => {
+            return entry.episode === episodeNumber && !entry.episodeReset;
+        });
+    }
+
+    // Create CSV content for Q-Learning episode data
+    createQLearningEpisodeCSV(data, episodeNumber) {
+        const headers = [
+            'Step', 'State', 'Wall-E X', 'Wall-E Y', 'Evil Robot X', 'Evil Robot Y',
+            'Trash Count', 'Action ID', 'Action Name', 'Q-Value', 'Is Optimal Action'
+        ];
+
+        const csvContent = [
+            `# Q-LEARNING EPISODE ${episodeNumber} DATA EXPORT`,
+            `# Generated: ${new Date().toISOString()}`,
+            `# Algorithm: Q-Learning`,
+            `# Episode: ${episodeNumber}`,
+            `# Total steps in episode: ${data.length}`,
+            `#`,
+            headers.join(','),
+            ...data.map((entry, index) => [
+                index + 1,
+                `"${entry.state}"`,
+                entry.wallEX,
+                entry.wallEY,
+                entry.evilRobotX,
+                entry.evilRobotY,
+                entry.trashCount,
+                entry.action,
+                `"${entry.actionName}"`,
+                entry.qValue.toFixed(4),
+                entry.isOptimal ? 'TRUE' : 'FALSE'
+            ].join(','))
+        ].join('\n');
+
+        return csvContent;
+    }
+
+    // Create CSV content for Monte Carlo episode data
+    createMonteCarloEpisodeCSV(data, episodeNumber) {
+        const headers = [
+            'Step', 'State', 'Action ID', 'Return Value', 'Reward', 'Timestamp'
+        ];
+
+        const csvContent = [
+            `# MONTE CARLO EPISODE ${episodeNumber} DATA EXPORT`,
+            `# Generated: ${new Date().toISOString()}`,
+            `# Algorithm: Monte Carlo`,
+            `# Episode: ${episodeNumber}`,
+            `# Total steps in episode: ${data.length}`,
+            `#`,
+            headers.join(','),
+            ...data.map(entry => [
+                entry.step,
+                `"${entry.state}"`,
+                entry.action,
+                entry.returnValue,
+                entry.reward,
+                entry.timestamp
+            ].join(','))
+        ].join('\n');
+
+        return csvContent;
+    }
+
+    // Create CSV content for Actor-Critic episode data
+    createActorCriticEpisodeCSV(data, episodeNumber) {
+        const headers = [
+            'Step', 'State', 'Action ID', 'State Value', 'Reward', 'Timestamp'
+        ];
+
+        const csvContent = [
+            `# ACTOR-CRITIC EPISODE ${episodeNumber} DATA EXPORT`,
+            `# Generated: ${new Date().toISOString()}`,
+            `# Algorithm: Actor-Critic`,
+            `# Episode: ${episodeNumber}`,
+            `# Total steps in episode: ${data.length}`,
+            `#`,
+            headers.join(','),
+            ...data.map(entry => [
+                entry.step,
+                `"${entry.state}"`,
+                entry.action,
+                entry.stateValue,
+                entry.reward,
+                entry.timestamp
+            ].join(','))
+        ].join('\n');
+
+        return csvContent;
     }
 
     async runEpisode() {

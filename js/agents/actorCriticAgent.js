@@ -141,6 +141,18 @@ class ActorCriticAgent extends BaseAgent {
             this.states.push(this.stateToTensor(state));
             this.actions.push(action);
             this.rewards.push(reward);
+            
+            // Track step-by-step data for episode export (will be updated with state values later)
+            this.updateHistory.push({
+                episode: this.currentEpisode,
+                step: this.states.length,
+                state: `Step_${this.states.length}`,
+                action: action,
+                stateValue: '0.0000', // Will be updated in episodeEnd
+                reward: reward,
+                timestamp: new Date().toISOString(),
+                episodeReset: 'FALSE'
+            });
 
             if (done) {
                 this.episodeEnd();

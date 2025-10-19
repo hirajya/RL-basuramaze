@@ -65,6 +65,18 @@ class MonteCarloAgent extends BaseAgent {
             this.episodeStates.push(stateStr);
             this.episodeActions.push(action);
             this.episodeRewards.push(reward);
+            
+            // Track step-by-step data for episode export (will be updated with returns later)
+            this.returnHistory.push({
+                episode: this.currentEpisode,
+                step: this.episodeStates.length,
+                state: stateStr,
+                action: action,
+                returnValue: '0.0000', // Will be updated in episodeEnd
+                reward: reward,
+                timestamp: new Date().toISOString(),
+                episodeReset: 'FALSE'
+            });
         } catch (error) {
             console.error('Error in update:', error);
         }
